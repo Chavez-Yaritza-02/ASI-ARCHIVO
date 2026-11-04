@@ -8,6 +8,10 @@ from asi_shared.enums import (
     OrigenHorario,
     Permiso,
     TipoAsignatura,
+    TipoEventoCalendario,
+    TipoIncidencia,
+    Turno,
+    turno_de,
 )
 
 __all__ = [
@@ -18,4 +22,8 @@ __all__ = [
     "OrigenHorario",
     "Permiso",
     "TipoAsignatura",
+    "TipoEventoCalendario",
+    "TipoIncidencia",
+    "Turno",
+    "turno_de",
 ]

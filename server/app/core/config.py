@@ -26,6 +26,9 @@ class Configuracion(BaseSettings):
     secret_key: str = Field(min_length=32)
     token_minutos: int = 480  # una jornada laboral
     zona_horaria: str = "America/Mexico_City"
+    # Encabezado de los reportes impresos.
+    institucion: str = "Tecnológico Superior de Jalisco · Unidad Académica Zapopan"
+    dependencia: str = "Jefatura de Electromecánica"
 
 
 @lru_cache

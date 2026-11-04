@@ -8,10 +8,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api import auth, catalogos, horarios, importaciones, periodos
+from app.api import auth, bitacora, catalogos, horarios, importaciones, periodos
 from app.services.comun import ErrorNegocio
 
-app = FastAPI(title="ASI-ARCHIVO API", version="0.3.0")
+app = FastAPI(title="ASI-ARCHIVO API", version="0.4.0")
 app.include_router(auth.router)
 app.include_router(catalogos.docentes)
 app.include_router(catalogos.asignaturas)
@@ -20,6 +20,10 @@ app.include_router(catalogos.aulas)
 app.include_router(periodos.router)
 app.include_router(horarios.router)
 app.include_router(importaciones.router)
+app.include_router(bitacora.bitacora)
+app.include_router(bitacora.asistencias)
+app.include_router(bitacora.incidencias)
+app.include_router(bitacora.calendario)
 
 
 @app.exception_handler(ErrorNegocio)

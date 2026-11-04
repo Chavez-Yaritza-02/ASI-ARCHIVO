@@ -8,7 +8,7 @@ Flujo:
 """
 
 import hashlib
-from datetime import datetime
+from datetime import date, datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -44,7 +44,9 @@ from asi_cliente.cuadricula import (
 from asi_cliente.views.comunes import (
     COLORES_ESTADO,
     NOMBRES_ESTADO,
+    Campo,
     Columna,
+    DialogoFormulario,
     Tabla,
     confirmar,
     encabezado,
@@ -518,24 +520,45 @@ class VistaHorarios(QWidget):
         self.cambios_pendientes = False
         self.cargar_versiones(seleccionar=self.horario["id"])
 
-    def confirmar_vigente(self, aceptar: bool = False) -> None:
+    def _pedir_vigencia(self) -> str | None | bool:
+        """Si ya hay una versión vigente, pregunta desde cuándo rige la nueva.
+
+        Devuelve la fecha (texto ISO), None si no hace falta preguntar, o False si se canceló.
+        """
+        if not any(v["estado"] == "vigente" for v in self.versiones.filas):
+            return None
+        dialogo = DialogoFormulario(
+            "Fecha de vigencia",
+            [Campo("vigente_desde", "La nueva versión rige desde", "fecha")],
+            {"vigente_desde": date.today().isoformat()},
+            padre=self,
+        )
+        return dialogo.valores()["vigente_desde"] if dialogo.exec() else False
+
+    def confirmar_vigente(self, aceptar: bool = False, vigente_desde: str | None = None) -> None:
         if not self.horario:
             return
-        if not aceptar and not confirmar(
-            self,
-            f"¿Confirmar la versión {self.horario['version']} como vigente?",
-            "La versión vigente actual pasará al historial.",
-        ):
-            return
+        if not aceptar:
+            if not confirmar(
+                self,
+                f"¿Confirmar la versión {self.horario['version']} como vigente?",
+                "La versión vigente actual pasará al historial. Los días anteriores de la "
+                "bitácora seguirán usando el horario que regía entonces.",
+            ):
+                return
+            vigente_desde = self._pedir_vigencia()
+            if vigente_desde is False:
+                return
+        datos = {"aceptar_advertencias": aceptar}
+        if vigente_desde:
+            datos["vigente_desde"] = vigente_desde
         try:
-            self.api.post(
-                f"/horarios/{self.horario['id']}/confirmar", {"aceptar_advertencias": aceptar}
-            )
+            self.api.post(f"/horarios/{self.horario['id']}/confirmar", datos)
         except ErrorApi as error:
             if error.estado == 409 and error.problemas and not aceptar:
                 detalle = "\n".join(f"• {p}" for p in error.problemas)
                 if confirmar(self, "Hay advertencias. ¿Confirmar de todos modos?", detalle):
-                    self.confirmar_vigente(aceptar=True)
+                    self.confirmar_vigente(aceptar=True, vigente_desde=vigente_desde)
                 return
             mostrar_error(self, error)
             return

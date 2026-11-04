@@ -86,6 +86,10 @@ class Horario(ConFechas, Base):
     creado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"))
     confirmado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"))
     confirmado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Fechas en que esta versión rige (se fijan al confirmarla y al ser reemplazada).
+    # La bitácora usa la versión que regía en cada fecha, no la actual.
+    vigente_desde: Mapped[date | None] = mapped_column(Date)
+    vigente_hasta: Mapped[date | None] = mapped_column(Date)
 
     docente: Mapped[Docente] = relationship(lazy="joined")
     periodo: Mapped[Periodo] = relationship(lazy="joined")

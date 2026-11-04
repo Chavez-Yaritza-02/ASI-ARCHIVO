@@ -56,7 +56,8 @@ def limpiar_datos(base_de_datos):
             text(
                 "TRUNCATE usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
                 "periodo, horario, bloque_horario, importacion, importacion_documento, "
-                "importacion_pagina, importacion_celda RESTART IDENTITY"
+                "importacion_pagina, importacion_celda, calendario_evento, asistencia, "
+                "incidencia RESTART IDENTITY CASCADE"
             )
         )
         conexion.execute(text("ALTER TABLE auditoria ENABLE TRIGGER trg_auditoria_inmutable"))

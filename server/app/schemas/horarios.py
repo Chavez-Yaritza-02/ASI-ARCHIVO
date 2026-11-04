@@ -69,6 +69,9 @@ class HorarioEditar(BaseModel):
 
 class Confirmacion(BaseModel):
     aceptar_advertencias: bool = False
+    vigente_desde: date | None = Field(
+        default=None, description="Desde cuándo rige (por omisión: inicio del periodo u hoy)"
+    )
 
 
 class HorarioResumen(BaseModel):
@@ -83,6 +86,8 @@ class HorarioResumen(BaseModel):
     basado_en_id: int | None
     creado_en: datetime
     confirmado_en: datetime | None
+    vigente_desde: date | None = None
+    vigente_hasta: date | None = None
 
 
 class HorarioDetalle(HorarioResumen):
@@ -114,6 +119,8 @@ def resumen(horario) -> HorarioResumen:
         basado_en_id=horario.basado_en_id,
         creado_en=horario.creado_en,
         confirmado_en=horario.confirmado_en,
+        vigente_desde=horario.vigente_desde,
+        vigente_hasta=horario.vigente_hasta,
     )
 
 
