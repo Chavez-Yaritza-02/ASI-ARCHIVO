@@ -66,6 +66,17 @@ uv run ruff format .     # formato automático
 
 GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](.github/workflows/pruebas.yml)).
 
+## Prueba de OCR (Etapa 1b)
+
+La herramienta de [herramientas/ocr_prueba/](herramientas/ocr_prueba/) extrae horarios de
+PDFs escaneados y mide su precisión. Resultados y método en
+[docs/EVALUACION_OCR.md](docs/EVALUACION_OCR.md). Requiere Tesseract
+(`brew install tesseract tesseract-lang`) y el grupo de dependencias `ocr`:
+
+```bash
+uv run --group ocr python herramientas/ocr_prueba/extraer.py CARPETA_PDFS salida.json
+```
+
 ## Datos institucionales
 
 No subas al repositorio archivos reales (horarios, oficios, `.env`). El archivo
