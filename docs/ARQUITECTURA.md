@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 4.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 5 y correcciones de integridad.
 
 ## 1. Objetivo
 
@@ -20,8 +20,7 @@ de la universidad y desde una MacBook, con la misma información en las tres.
    que estaba vigente en septiembre.
 3. **No se borra nada.** Los registros se desactivan (*soft delete*) y cada cambio
    queda en la tabla `auditoria`. La base de datos impide modificar o borrar la auditoría.
-4. **Ubicación programada ≠ presencia confirmada.** El buscador muestra dónde
-   *debería* estar un docente según su horario. Eso es distinto de que su presencia
+4. **Ubicación programada ≠ presencia confirmada.** El buscador muestra la ubicación *programada* de un docente según su horario y los avisos registrados. Eso es distinto de que su presencia
    esté registrada.
 5. **Sin secretos en el código.** Las credenciales viven en `.env` (fuera de Git)
    o en el llavero del sistema operativo.
@@ -117,7 +116,7 @@ Se agregará `deploy/` en la Etapa 8. El código de OCR vive en `server/app/impo
 | `rol_permiso`, `usuario_rol` | Relaciones muchos a muchos |
 | `auditoria` | Quién hizo qué, cuándo y desde qué IP; valores antes/después en JSONB. **Solo inserción** (lo garantiza un *trigger*) |
 
-**Roles iniciales:** `administrador` tiene los 14 permisos. `consulta` solo tiene los
+**Roles iniciales:** `administrador` tiene los 14 permisos originales y los agregados por las migraciones. `consulta` solo tiene los
 permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin tocar código.
 
 ### Implementado en la Etapa 2
@@ -130,7 +129,7 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 | `aula` | Clave única en mayúsculas ("M05", "SALA EM") y descripción |
 | `periodo` | Nombre, fechas, estado `borrador / activo / cerrado`. Índice único parcial: **solo un periodo activo**. Las fechas de dos periodos no pueden traslaparse |
 | `horario` | Una **versión** del horario de un docente en un periodo: número de versión, estado, origen (`manual / pdf / excel / csv`), fecha y versión del documento institucional, versión base, quién lo creó y quién lo confirmó. Índice único parcial: **una sola versión vigente por docente y periodo** |
-| `bloque_horario` | Día (0 = lunes … 5 = sábado), hora de inicio y fin, asignatura, grupo, aula y `grupo_letra` (letra leída del documento cuando aún no se sabe a qué grupo corresponde). Los horarios **por grupo** (Etapa 5) se obtendrán de esta misma tabla |
+| `bloque_horario` | Día (0 = lunes … 5 = sábado), hora de inicio y fin, asignatura, grupo, aula y `grupo_letra` (letra leída del documento cuando aún no se sabe a qué grupo corresponde). Los horarios **por grupo** (Etapa 5) se obtienen de esta misma tabla |
 
 Ningún catálogo se borra: se desactiva. Un registro inactivo sigue apareciendo en los
 horarios antiguos, pero no puede usarse en horarios nuevos.
@@ -253,7 +252,7 @@ clase), separada por turno: *matutino* si la actividad empieza antes de las 14:0
 | `asistencia` | Registro real: estado (`asistio / retardo / falto / justificado`), hora real de entrada y salida, observaciones, justificación, copia de lo programado (horario, inicio y fin), si se registró en día inhábil por excepción y número de correcciones. Única por docente, fecha y turno |
 | `incidencia` | Nota manual del día (comisión, permiso, salida anticipada, cambio de aula, otra), general o de un docente/turno. Se anula, no se borra |
 | `calendario_evento` | Día inhábil, vacaciones o suspensión, de uno o varios días, todo el día o un turno. Tipo `habil` = excepción autorizada que gana sobre los anteriores |
-| `horario.vigente_desde / vigente_hasta` | Fechas en que rigió cada versión. Al confirmar una versión nueva, la anterior rige hasta el día previo |
+| `horario.vigente_desde / vigente_hasta / vigencia_confirmada` | Intervalo temporal verificado; NULL y false representan vigencia desconocida. Una versión de estado vigente no certifica por sí sola fechas históricas |
 
 **Reglas:**
 - La lista del día **se calcula**, no se guarda: docentes con actividades ese día según
@@ -267,7 +266,7 @@ clase), separada por turno: *matutino* si la actividad empieza antes de las 14:0
 - Corregir: siempre con motivo; corregir días anteriores requiere `asistencia.corregir`.
   El historial (auditoría con antes, después, usuario y motivo) se consulta por registro.
 - Periodo cerrado: la bitácora queda de solo lectura.
-- Un retardo se sugiere (no se impone) cuando la entrada rebasa la tolerancia de 10 min.
+- Un retardo se sugiere (no se impone) cuando la entrada rebasa la tolerancia configurada; inicialmente 10 min. Solo un administrador puede cambiarla, con auditoría.
 
 **Reportes** (`app/reports/bitacora.py`): bitácora del día y reporte por rango (máx. 93
 días, por docente y turno) en **PDF** (carta horizontal, con encabezado institucional,
@@ -340,7 +339,7 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 2. Docentes y periodos. ✅ (Etapa 2)
 3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs ✅ (Etapa 3).
 4. Bitácora diaria con registro de estado, motivo, justificante e historial. ✅ (Etapa 4; el archivo del justificante llega en la Etapa 6)
-5. Buscador con "¿dónde debería estar ahora?".
+5. Buscador, semana por grupo y ubicación programada. ✅ (Etapa 5)
 6. Servidor desplegado con HTTPS y respaldos.
 
 ## 9. Etapas
@@ -352,7 +351,7 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 | 2 | Docentes, periodos, catálogos, captura y edición de horarios con versiones | ✅ Completa |
 | 3 | Importación ZIP → PDF → OCR → revisión editable → borrador | ✅ Completa ([resultados](EVALUACION_OCR.md#etapa-3-prueba-controlada-del-importador)) |
 | 4 | Bitácora diaria, calendario institucional, incidencias y reportes PDF/Excel | ✅ Completa |
-| 5 | Buscador, horarios por grupo, cruces, ubicación programada | Siguiente (pendiente de autorización) |
+| 5 | Buscador, horarios por grupo, cruces, ubicación programada, tolerancia configurable | ✅ Implementada; ver validaciones y límites en documentación de integridad |
 | 6 | Archivo digital de documentos | |
 | 7 | Reportes PDF y Excel | |
 | 8 | Servidor, instaladores, respaldos y revisión de seguridad | |
@@ -386,3 +385,58 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 | 2026-11-04 | Vigencia con fechas en cada versión de horario | La bitácora de días pasados usa el horario que regía entonces |
 | 2026-11-04 | Corrección = motivo obligatorio; días anteriores requieren `asistencia.corregir` | Correcciones autorizadas y trazables |
 | 2026-11-04 | Reportes con reportlab y openpyxl | Python puro, sin dependencias del sistema: funcionan igual en Windows |
+
+
+## 11. Etapa 5 e integridad temporal
+
+- Servicios de consulta en `server/app/services/consultas.py`; endpoints en
+  `server/app/api/consultas.py`; pantallas PySide6 en `client/asi_cliente/views/consultas.py`.
+- `GET /buscador`: categorías separadas, texto sin acentos, filtros de programación
+  (carrera, semestre, periodo, día 0–5 y turno), fecha de vigencia y paginación.
+  Los catálogos sin filtros incluyen registros sin horario; al filtrar programación,
+  los resultados deben estar asociados a bloques de versiones verificadas.
+- `GET /consultas/grupos`: filtros carrera, semestre, letra y periodo sobre la identidad
+  completa del grupo; excluye grupos pendientes. No completa las letras leídas por OCR.
+- `GET /consultas/grupos/{id}/horario?fecha`: lunes a domingo; se calcula cada fecha
+  por separado, con las versiones que correspondían a ese día. Señala traslapes de grupo
+  entre docentes y suspensiones del calendario. No inventa días inhábiles.
+- `GET /consultas/grupos/{id}/exportar?fecha&formato=pdf|xlsx`: mismo servicio de consulta,
+  firmas por cargo, sin personas fijas; Excel escribe texto literal, nunca fórmulas de catálogos.
+- `GET /consultas/docentes/{id}/ubicacion?fecha&hora`: intervalos semiabiertos
+  `[inicio, fin)`, horario local de la Jefatura; devuelve `ubicacion_real=null`.
+  Considera incidencias generales y por docente/turno y suspensiones registradas.
+  Una incidencia de texto libre exige verificación; no se deduce el aula efectiva.
+- `GET /consultas/ahora`: reloj y zona del servidor para inicializar la consulta en
+  clientes macOS/Windows sin depender de su zona local.
+- `GET/PUT /configuracion/asistencia`: tolerancia administrativa 0–120 min; nueva tabla
+  singleton `configuracion_asistencia`. Se aplica en API y sugerencias de la interfaz.
+- `POST /horarios/{id}/vigencia`: confirmación/corrección de fechas reales con
+  `horarios.confirmar`, motivo y auditoría. Serializa confirmaciones por docente y
+  rechaza traslapes temporales. Los históricos requieren fin conocido.
+
+Las consultas de grupo requieren `horarios.ver` y `asistencia.ver`; la ubicación suma
+`docentes.ver`. Exportar requiere además `reportes.generar`. El buscador solo entrega
+categorías autorizadas y no permite usar filtros de horarios sin permiso de lectura.
+La configuración solo puede cambiarla el rol administrador.
+
+La migración `e5a001` es nueva y posterior a `8b4cb2f4fef8`; no se modifica una
+migración publicada. Conserva las fechas heredadas en auditoría y representa su falta
+de certeza con NULL y `vigencia_confirmada=false`. Las asistencias ya registradas
+conservan su copia del programa original. La versión oficial sigue disponible aunque
+sus fechas aún no estén verificadas. Los borradores confirmados sin fecha explícita
+no reciben automáticamente el inicio del periodo.
+
+La protección de pruebas acepta solo la base y usuario `asi_archivo_pytest`, valida
+la URL antes de conectar y la identidad/privilegios del servidor antes de cambiar
+el esquema. Se usa en pytest, Alembic y CLI. Véase
+[INTEGRIDAD_Y_PRUEBAS.md](INTEGRIDAD_Y_PRUEBAS.md) para preparación y política de actualización.
+
+## 12. Decisiones de continuidad
+
+- Se trabaja sobre `etapa-4-bitacora`, sin merge de los PR anteriores. El nuevo PR
+  apunta a esa rama para mostrar únicamente el trabajo de esta entrega.
+- No se aplican migraciones a la base principal ni a la aislada con datos reales.
+- Los justificantes documentales siguen en Etapa 6; los instaladores de Windows y
+  macOS siguen en Etapa 8. La validación gráfica automatizada usa Qt offscreen.
+- Las fechas heredadas requieren evidencia humana. No se reconstruyen automáticamente
+  a partir del periodo, del nombre del archivo ni de la fecha de creación del registro.

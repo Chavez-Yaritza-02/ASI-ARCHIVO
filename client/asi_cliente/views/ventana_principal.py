@@ -23,6 +23,12 @@ from asi_cliente.api.cliente import ClienteApi, UsuarioSesion
 from asi_cliente.views.bitacora import VistaBitacora
 from asi_cliente.views.calendario import VistaCalendario
 from asi_cliente.views.catalogos import DOCENTES, VistaCatalogo, VistaCatalogos
+from asi_cliente.views.consultas import (
+    VistaBuscador,
+    VistaConfiguracionAsistencia,
+    VistaGrupos,
+    VistaUbicacion,
+)
 from asi_cliente.views.horarios import VistaHorarios
 from asi_cliente.views.importacion import VistaImportacion
 from asi_cliente.views.periodos import VistaPeriodos
@@ -37,6 +43,9 @@ SECCIONES = [
     ("Periodos", "horarios.ver", 2),
     ("Catálogos", "horarios.ver", 2),
     ("Buscador", "docentes.ver", 5),
+    ("Horarios por grupo", "horarios.ver", 5),
+    ("Ubicación programada", "horarios.ver", 5),
+    ("Tolerancia de retardos", "asistencia.ver", 5),
     ("Documentos", "documentos.ver", 6),
     ("Reportes", "reportes.ver", 7),
 ]
@@ -45,6 +54,10 @@ PANTALLAS = {
     "Bitácora del día": VistaBitacora,
     "Calendario": VistaCalendario,
     "Horarios": VistaHorarios,
+    "Buscador": VistaBuscador,
+    "Horarios por grupo": VistaGrupos,
+    "Ubicación programada": VistaUbicacion,
+    "Tolerancia de retardos": VistaConfiguracionAsistencia,
     "Importar horarios": VistaImportacion,
     "Docentes": lambda api, u: VistaCatalogo(api, u, DOCENTES, "Docentes"),
     "Periodos": VistaPeriodos,
@@ -73,7 +86,16 @@ def fecha_larga(d: date) -> str:
 
 
 def secciones_visibles(usuario: UsuarioSesion) -> list[tuple[str, str, int]]:
-    return [s for s in SECCIONES if usuario.puede(s[1])]
+    return [
+        s
+        for s in SECCIONES
+        if (usuario.puede(s[1]) or (s[0] == "Buscador" and usuario.puede("horarios.ver")))
+        and (s[0] != "Horarios por grupo" or usuario.puede("asistencia.ver"))
+        and (
+            s[0] != "Ubicación programada"
+            or all(usuario.puede(p) for p in ("asistencia.ver", "docentes.ver"))
+        )
+    ]
 
 
 def _pagina_provisional(titulo: str, etapa: int) -> QWidget:

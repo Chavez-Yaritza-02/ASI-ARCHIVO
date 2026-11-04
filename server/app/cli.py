@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.seguridad import hashear_contrasena
+from app.db.proteccion_pruebas import en_pruebas, validar_conexion_pruebas
 from app.db.sesion import obtener_engine
 from app.models import Auditoria, Rol, Usuario
 
@@ -21,6 +22,8 @@ LONGITUD_MINIMA = 10
 
 
 def crear_usuario(sesion: Session, correo: str, nombre: str, rol: str, contrasena: str) -> Usuario:
+    if en_pruebas():
+        validar_conexion_pruebas(sesion.connection())
     correo = correo.strip().lower()
     if len(contrasena) < LONGITUD_MINIMA:
         raise ValueError(f"La contraseña debe tener al menos {LONGITUD_MINIMA} caracteres")

@@ -12,7 +12,6 @@ from openpyxl import load_workbook
 from sqlalchemy import text
 
 from app.services import bitacora as servicio_bitacora
-from app.services import horarios as servicio_horarios
 
 HOY = date(2026, 11, 4)
 LUNES, MARTES, DOMINGO, LUNES_SIGUIENTE = "2026-11-02", "2026-11-03", "2026-11-08", "2026-11-09"
@@ -22,7 +21,6 @@ CONTRASENA = "contrasena-de-prueba"
 @pytest.fixture(autouse=True)
 def hoy_fijo(monkeypatch):
     monkeypatch.setattr(servicio_bitacora, "hoy", lambda: HOY)
-    monkeypatch.setattr(servicio_horarios, "hoy", lambda: HOY)
 
 
 def bloque(dia, inicio, fin, asignatura, grupo=None, aula=None):
@@ -70,7 +68,10 @@ def escuela(cliente, como_admin):
     def horario(docente, bloques):
         h = post("/horarios", {"docente_id": ids[docente], "periodo_id": ids["periodo"]})
         cliente.put(f"/horarios/{h['id']}/bloques", json=bloques, headers=como_admin)
-        return post(f"/horarios/{h['id']}/confirmar", {"aceptar_advertencias": True})
+        return post(
+            f"/horarios/{h['id']}/confirmar",
+            {"aceptar_advertencias": True, "vigente_desde": "2026-08-01"},
+        )
 
     ids["horario_uno"] = horario(
         "uno",

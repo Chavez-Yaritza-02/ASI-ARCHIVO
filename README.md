@@ -24,7 +24,10 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 createuser asi_dev
 psql postgres -c "ALTER USER asi_dev WITH PASSWORD 'elige-una-contrasena';"
 createdb -O asi_dev asi_archivo
-createdb -O asi_dev asi_archivo_test
+# Pruebas: base y rol exclusivos, sin privilegios administrativos.
+createuser --no-superuser --no-createdb --no-createrole asi_archivo_pytest
+psql postgres -c "\password asi_archivo_pytest"
+createdb -O asi_archivo_pytest asi_archivo_pytest
 
 # 3. Configuración: copia la plantilla y ajusta la URL y la clave secreta
 cp .env.example .env
@@ -61,7 +64,11 @@ uv run asi-archivo
 El cliente se conecta a `http://127.0.0.1:8000` por defecto. Para otro servidor, define
 `ASI_SERVIDOR_URL`; fuera de la propia computadora solo se acepta `https://`.
 
-Después de actualizar el código, aplica las migraciones nuevas antes de abrir la app:
+Para una base existente, revisa primero [Integridad y pruebas](docs/INTEGRIDAD_Y_PRUEBAS.md).
+La migración nueva `e5a001` conserva las versiones y audita sus fechas anteriores,
+pero deja las vigencias heredadas como **desconocidas** hasta confirmación humana.
+No aplica cambios automáticamente a bases reales. Una vez revisado el impacto y
+autorizada la actualización de esa base, las migraciones se ejecutan así:
 
 ```bash
 cd server && uv run alembic upgrade head && cd ..
@@ -85,7 +92,11 @@ Flujo para capturar un horario:
 4. **Guardar cambios**: el servidor valida traslapes, materias sin grupo y catálogos inactivos.
 5. **Confirmar como vigente** (solo administradores). Si el aula la ocupa otro docente, o
    la versión es idéntica a la vigente, se pide confirmación. La versión anterior pasa
-   al historial.
+   al historial. La interfaz solicita una fecha real explícita; la API permite omitirla,
+   en cuyo caso la vigencia temporal queda desconocida y no participa en consultas por fecha.
+6. **Confirmar / corregir fechas reales** permite al confirmador autorizado registrar
+   inicio, fin y motivo/evidencia; los históricos requieren fecha final. Cada corrección
+   queda auditada y no cambia los bloques.
 
 El rol **consulta** puede ver todo, pero no ve los botones de edición; la API también
 rechaza cualquier cambio que intente.
@@ -93,9 +104,9 @@ rechaza cualquier cambio que intente.
 ## Pruebas y estilo
 
 ```bash
-uv run pytest            # usa la base de datos asi_archivo_test
+uv run pytest -q --tb=short  # exclusivamente asi_archivo_pytest (rol restringido)
 uv run ruff check .      # reglas de estilo
-uv run ruff format .     # formato automático
+uv run ruff format --check .  # comprueba el formato
 ```
 
 GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](.github/workflows/pruebas.yml)).
@@ -124,7 +135,7 @@ vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
   actividades ese día según el horario que regía en esa fecha, un renglón por turno
   (matutino antes de las 14:00, vespertino desde las 14:00).
   - Doble clic o «Registrar / corregir»: estado, hora real de entrada y salida,
-    observaciones y justificación. Si la entrada rebasa 10 min se sugiere «Retardo».
+    observaciones y justificación. Si la entrada rebasa la tolerancia configurada (inicialmente 10 min), se sugiere «Retardo».
   - «Marcar seleccionados: asistió» registra varios pendientes a la vez.
   - Una corrección pide motivo; corregir días anteriores requiere autorización. El
     botón «Historial» muestra cada cambio, quién lo hizo y por qué.
@@ -135,6 +146,36 @@ vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
   (excepción)» permite trabajar en una fecha inhábil.
 - Sin registro, un docente aparece como **Pendiente de verificar**: el sistema nunca
   marca faltas por su cuenta.
+
+## Uso: consultas y ubicación programada (Etapa 5)
+
+- **Buscador:** busca docentes, materias, grupos y aulas sin distinguir acentos.
+  Filtra por carrera, semestre, periodo, día y turno. La fecha selecciona la versión
+  de horario que regía entonces. Las actividades se muestran separadas de los catálogos;
+  los resultados se paginan, hasta 100 por categoría en la interfaz.
+- **Horarios por grupo:** filtra carrera, semestre, letra y periodo, busca grupos,
+  selecciona uno y consulta su semana. Cada clase muestra fecha, materia, docente,
+  aula y horas. Los traslapes quedan señalados. **Exportar PDF / Excel** respeta el
+  permiso de generación de reportes y conserva los cargos de firma sin nombres personales.
+  Una semana puede combinar versiones diferentes si hubo un cambio durante ella.
+- **Ubicación programada:** busca docente y consulta una fecha y hora local de la
+  Jefatura. Muestra actividades programadas, suspensiones e incidencias registradas.
+  Siempre distingue programación de presencia física. Sin clase o con fechas desconocidas
+  se informa expresamente. Los cambios de aula guardados como texto libre se muestran
+  como avisos y dejan el aula efectiva por verificar: no se interpreta su texto como destino.
+- **Tolerancia de retardos:** comienza en 10 minutos; solo el rol administrador puede
+  cambiarla (0–120 minutos), con auditoría. Se aplica al volver a consultar la bitácora.
+
+Las fechas desconocidas nunca se sustituyen por el inicio del periodo. Las versiones
+siguen disponibles en **Horarios** para que un confirmador autorizado registre las
+fechas verificadas. No se completan automáticamente las letras pendientes de grupos.
+Los filtros de horarios requieren `horarios.ver`; las consultas que muestran calendario
+o incidencias también requieren `asistencia.ver`. La ubicación necesita además
+`docentes.ver`, y exportar requiere `reportes.generar`. La API aplica estas reglas aunque
+un cliente intente saltarse los botones ocultos.
+
+Los detalles de la migración correctiva, preparación de la base de pruebas y verificaciones
+están en [Integridad y pruebas](docs/INTEGRIDAD_Y_PRUEBAS.md).
 
 ## Datos reales y base aislada
 

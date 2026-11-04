@@ -1,8 +1,10 @@
 """Endpoints de horarios versionados."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from app.api.deps import SesionDB, requiere_permiso
 from app.models import Usuario
@@ -24,6 +26,19 @@ router = APIRouter(prefix="/horarios", tags=["horarios"])
 Lector = Annotated[Usuario, Depends(requiere_permiso(Permiso.HORARIOS_VER))]
 Editor = Annotated[Usuario, Depends(requiere_permiso(Permiso.HORARIOS_EDITAR))]
 Confirmador = Annotated[Usuario, Depends(requiere_permiso(Permiso.HORARIOS_CONFIRMAR))]
+
+
+class VigenciaEntrada(BaseModel):
+    desde: date
+    hasta: date | None = None
+    motivo: str = Field(min_length=5, max_length=2000)
+
+
+@router.post("/{id_}/vigencia", response_model=HorarioDetalle)
+def confirmar_vigencia(id_: int, datos: VigenciaEntrada, sesion: SesionDB, usuario: Confirmador):
+    return detalle(
+        servicio.confirmar_vigencia(sesion, usuario, id_, datos.desde, datos.hasta, datos.motivo)
+    )
 
 
 @router.get("", response_model=list[HorarioResumen])

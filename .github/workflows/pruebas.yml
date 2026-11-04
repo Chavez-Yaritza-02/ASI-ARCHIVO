@@ -12,13 +12,12 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: asi_dev
-          POSTGRES_PASSWORD: asi_dev_ci
-          POSTGRES_DB: asi_archivo_test
-        ports: ["5432:5432"]
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: postgres
+        ports: ["127.0.0.1:5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      ASI_TEST_DATABASE_URL: postgresql+psycopg://asi_dev:asi_dev_ci@localhost:5432/asi_archivo_test
       QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +25,47 @@ jobs:
       - name: Bibliotecas de sistema (Qt y Tesseract)
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
       - run: uv sync --python 3.12 --locked
+      - name: Base exclusiva y rol restringido de pruebas
+        run: |
+          uv run python - <<'PY'
+          import os
+          import secrets
+          import psycopg
+          from psycopg import sql
+          from sqlalchemy import URL
+
+          nombre = "asi_archivo_pytest"
+          clave = secrets.token_urlsafe(32)
+          print("::add-mask::" + clave)
+          # Servicio efímero, accesible solo en el loopback del runner.
+          with psycopg.connect("dbname=postgres user=asi_dev host=localhost", autocommit=True) as c:
+              c.execute(sql.SQL(
+                  "CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB "
+                  "NOCREATEROLE NOREPLICATION NOBYPASSRLS"
+              ).format(sql.Identifier(nombre), sql.Literal(clave)))
+              c.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                  sql.Identifier(nombre), sql.Identifier(nombre)))
+          url = URL.create("postgresql+psycopg", username=nombre, password=clave,
+                           host="localhost", port=5432, database=nombre)
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("ASI_TEST_DATABASE_URL=" + url.render_as_string(hide_password=False) + "\n")
+          PY
       - name: Estilo de código
         run: uv run ruff check . && uv run ruff format --check .
       - name: Pruebas
         run: uv run pytest -q
+
+  cliente-portable:
+    name: Cliente (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.12 --locked
+      - name: Cliente HTTP, cuadrícula y vistas Qt sin base de datos
+        run: uv run pytest -q --tb=short client/tests

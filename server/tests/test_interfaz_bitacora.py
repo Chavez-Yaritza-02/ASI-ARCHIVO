@@ -8,7 +8,6 @@ from PySide6.QtCore import QDate, QTime
 
 from app.main import app
 from app.services import bitacora as servicio_bitacora
-from app.services import horarios as servicio_horarios
 from asi_cliente.api.cliente import ClienteApi
 from asi_cliente.views import bitacora as vista_bitacora
 from asi_cliente.views import calendario as vista_calendario
@@ -23,7 +22,6 @@ LUNES = date(2026, 11, 2)
 @pytest.fixture(autouse=True)
 def hoy_fijo(monkeypatch):
     monkeypatch.setattr(servicio_bitacora, "hoy", lambda: HOY)
-    monkeypatch.setattr(servicio_horarios, "hoy", lambda: HOY)
 
 
 def api_de(correo):
@@ -58,7 +56,7 @@ def api(admin):
                 for dia, i, f in bloques
             ],
         )
-        api.post(f"/horarios/{h['id']}/confirmar")
+        api.post(f"/horarios/{h['id']}/confirmar", {"vigente_desde": "2026-08-01"})
     return api
 
 

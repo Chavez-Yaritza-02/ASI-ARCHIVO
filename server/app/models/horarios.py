@@ -13,6 +13,7 @@ un periodo activo y una versión vigente por docente y periodo.
 from datetime import date, datetime, time
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -62,6 +63,12 @@ class Horario(ConFechas, Base):
             "estado IN ('borrador', 'vigente', 'historico', 'descartado')", name="estado"
         ),
         CheckConstraint("origen IN ('manual', 'pdf', 'excel', 'csv')", name="origen"),
+        CheckConstraint(
+            "(vigente_hasta IS NULL OR (vigente_desde IS NOT NULL "
+            "AND vigente_hasta >= vigente_desde)) "
+            "AND (NOT vigencia_confirmada OR vigente_desde IS NOT NULL)",
+            name="vigencia_fechas",
+        ),
         # Solo una versión vigente por docente y periodo.
         Index(
             "uq_horario_un_vigente",
@@ -90,6 +97,9 @@ class Horario(ConFechas, Base):
     # La bitácora usa la versión que regía en cada fecha, no la actual.
     vigente_desde: Mapped[date | None] = mapped_column(Date)
     vigente_hasta: Mapped[date | None] = mapped_column(Date)
+    vigencia_confirmada: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
 
     docente: Mapped[Docente] = relationship(lazy="joined")
     periodo: Mapped[Periodo] = relationship(lazy="joined")

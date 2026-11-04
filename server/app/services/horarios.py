@@ -15,7 +15,7 @@ Validaciones:
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -28,7 +28,7 @@ from app.models import (
     Periodo,
     Usuario,
 )
-from app.services.comun import ErrorNegocio, NoEncontrado, auditar, hoy, instantanea
+from app.services.comun import ErrorNegocio, NoEncontrado, auditar, instantanea
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]
 CAMPOS = ["docente_id", "periodo_id", "version", "estado", "origen", "notas"]
@@ -357,27 +357,29 @@ def confirmar(
 ) -> Horario:
     """Convierte un borrador en la versión vigente. La anterior pasa a histórico.
 
-    `vigente_desde`: fecha desde la que rige. Si se omite: el inicio del periodo cuando
-    es la primera versión, u hoy cuando reemplaza a otra. La anterior rige hasta el día
-    previo, así la bitácora de fechas pasadas sigue usando el horario de ese momento.
+    Sin fecha explícita la vigencia queda desconocida; nunca se infiere del periodo.
     """
     horario = obtener(sesion, id_)
+    sesion.execute(select(Docente).where(Docente.id == horario.docente_id).with_for_update())
+    sesion.refresh(horario)
     periodo = horario.periodo
     _exigir_periodo_abierto(periodo)
     _exigir_borrador(horario)
     if not horario.bloques:
         raise ErrorNegocio("No se puede confirmar un horario sin actividades", 422)
     anterior = vigente(sesion, horario.docente_id, horario.periodo_id)
-    if vigente_desde is None:
-        vigente_desde = periodo.fecha_inicio if anterior is None else hoy()
-        vigente_desde = min(max(vigente_desde, periodo.fecha_inicio), periodo.fecha_fin)
-    if not periodo.fecha_inicio <= vigente_desde <= periodo.fecha_fin:
+    if vigente_desde is not None and not periodo.fecha_inicio <= vigente_desde <= periodo.fecha_fin:
         raise ErrorNegocio(
             f"La fecha de vigencia debe estar dentro del periodo "
             f"({periodo.fecha_inicio} a {periodo.fecha_fin})",
             422,
         )
-    if anterior is not None and anterior.vigente_desde and vigente_desde <= anterior.vigente_desde:
+    if (
+        anterior is not None
+        and anterior.vigente_desde
+        and vigente_desde is not None
+        and vigente_desde <= anterior.vigente_desde
+    ):
         raise ErrorNegocio(
             f"La nueva versión debe regir después del {anterior.vigente_desde}, "
             "fecha desde la que rige la versión actual",
@@ -387,9 +389,29 @@ def confirmar(
     if avisos and not aceptar_advertencias:
         raise ErrorNegocio("Revisa las advertencias antes de confirmar", 409, avisos)
 
+    if vigente_desde is not None:
+        colision = sesion.scalar(
+            select(Horario.id).where(
+                Horario.docente_id == horario.docente_id,
+                Horario.periodo_id == horario.periodo_id,
+                Horario.id != horario.id,
+                Horario.id != anterior.id if anterior is not None else True,
+                Horario.vigencia_confirmada.is_(True),
+                or_(Horario.vigente_hasta.is_(None), Horario.vigente_hasta >= vigente_desde),
+            )
+        )
+        if colision is not None:
+            raise ErrorNegocio("La vigencia se traslapa con una versión confirmada", 409)
+
     if anterior is not None:
+        if anterior.vigencia_confirmada and vigente_desde is None:
+            raise ErrorNegocio("Indica la fecha real de reemplazo de la versión confirmada", 422)
         anterior.estado = "historico"
-        anterior.vigente_hasta = vigente_desde - timedelta(days=1)
+        anterior.vigente_hasta = (
+            min(anterior.vigente_hasta or periodo.fecha_fin, vigente_desde - timedelta(days=1))
+            if vigente_desde is not None and anterior.vigencia_confirmada
+            else None
+        )
         auditar(
             sesion,
             usuario,
@@ -406,6 +428,7 @@ def confirmar(
         sesion.flush()  # libera el índice de "un vigente" antes de marcar el nuevo
     horario.estado = "vigente"
     horario.vigente_desde = vigente_desde
+    horario.vigencia_confirmada = vigente_desde is not None
     horario.confirmado_por_id = usuario.id
     horario.confirmado_en = datetime.now(UTC)
     auditar(
@@ -423,6 +446,50 @@ def confirmar(
     )
     sesion.commit()
     return horario
+
+
+def confirmar_vigencia(sesion, usuario, id_, desde, hasta, motivo):
+    """Certifica fechas reales sin editar los bloques ni el ciclo de versiones."""
+    h = obtener(sesion, id_)
+    # Serializa todas las confirmaciones temporales del mismo docente/periodo.
+    sesion.execute(select(Docente).where(Docente.id == h.docente_id).with_for_update())
+    sesion.refresh(h)
+    if h.estado not in ("vigente", "historico"):
+        raise ErrorNegocio("Solo se confirma la vigencia de versiones oficiales", 409)
+    if not motivo.strip():
+        raise ErrorNegocio("Indica el motivo y la evidencia de las fechas reales", 422)
+    if (
+        not h.periodo.fecha_inicio <= desde <= h.periodo.fecha_fin
+        or (hasta is not None and not desde <= hasta <= h.periodo.fecha_fin)
+        or (h.estado == "historico" and hasta is None)
+    ):
+        raise ErrorNegocio("Fechas inválidas; los históricos requieren fecha final", 422)
+    otros = sesion.scalars(
+        select(Horario).where(
+            Horario.docente_id == h.docente_id,
+            Horario.periodo_id == h.periodo_id,
+            Horario.id != h.id,
+            Horario.vigencia_confirmada.is_(True),
+            Horario.vigente_desde <= (hasta or h.periodo.fecha_fin),
+            or_(Horario.vigente_hasta.is_(None), Horario.vigente_hasta >= desde),
+        )
+    ).all()
+    if otros:
+        raise ErrorNegocio("La vigencia se traslapa con otra versión confirmada", 409)
+    campos = ["vigente_desde", "vigente_hasta", "vigencia_confirmada"]
+    antes = instantanea(h, campos)
+    h.vigente_desde, h.vigente_hasta, h.vigencia_confirmada = desde, hasta, True
+    auditar(
+        sesion,
+        usuario,
+        "confirmar_vigencia",
+        "horario",
+        h.id,
+        antes,
+        {**instantanea(h, campos), "motivo": motivo.strip()},
+    )
+    sesion.commit()
+    return h
 
 
 def descartar(sesion: Session, usuario: Usuario, id_: int) -> Horario:

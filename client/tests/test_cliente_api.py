@@ -96,6 +96,10 @@ def test_menu_solo_muestra_secciones_permitidas():
     titulos = [s[0] for s in secciones_visibles(usuario)]
     assert "Bitácora del día" in titulos and "Docentes" in titulos
     assert "Periodos" not in titulos and "Documentos" not in titulos
+    usuario.permisos = ["horarios.ver"]
+    titulos = [s[0] for s in secciones_visibles(usuario)]
+    assert "Buscador" in titulos
+    assert "Ubicación programada" not in titulos and "Horarios por grupo" not in titulos
 
 
 def test_fecha_en_espanol():
