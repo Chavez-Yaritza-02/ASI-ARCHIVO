@@ -47,12 +47,17 @@ def base_de_datos():
 
 
 @pytest.fixture(autouse=True)
-def limpiar_usuarios(base_de_datos):
+def limpiar_datos(base_de_datos):
     yield
     with base_de_datos.begin() as conexion:
         # Solo en pruebas: se desactiva el bloqueo de la auditoría para limpiar.
         conexion.execute(text("ALTER TABLE auditoria DISABLE TRIGGER trg_auditoria_inmutable"))
-        conexion.execute(text("TRUNCATE usuario, usuario_rol, auditoria RESTART IDENTITY"))
+        conexion.execute(
+            text(
+                "TRUNCATE usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
+                "periodo, horario, bloque_horario RESTART IDENTITY"
+            )
+        )
         conexion.execute(text("ALTER TABLE auditoria ENABLE TRIGGER trg_auditoria_inmutable"))
 
 
@@ -75,3 +80,20 @@ def admin(sesion):
 @pytest.fixture
 def consulta(sesion):
     return crear_usuario(sesion, "consulta@prueba.mx", "Consulta Prueba", "consulta", CONTRASENA)
+
+
+def _encabezados(cliente, correo: str) -> dict[str, str]:
+    r = cliente.post("/auth/login", data={"username": correo, "password": CONTRASENA})
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+@pytest.fixture
+def como_admin(cliente, admin):
+    """Encabezados de autenticación de un administrador."""
+    return _encabezados(cliente, admin.correo)
+
+
+@pytest.fixture
+def como_consulta(cliente, consulta):
+    """Encabezados de autenticación de un usuario de solo consulta."""
+    return _encabezados(cliente, consulta.correo)

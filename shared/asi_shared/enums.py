@@ -24,6 +24,41 @@ class EstadoPeriodo(StrEnum):
     CERRADO = "cerrado"
 
 
+class EstadoHorario(StrEnum):
+    """Ciclo de vida de una versión de horario.
+
+    borrador -> vigente (confirmado por un administrador) -> historico (reemplazado)
+    borrador -> descartado
+    Solo puede haber una versión vigente por docente y periodo.
+    """
+
+    BORRADOR = "borrador"
+    VIGENTE = "vigente"
+    HISTORICO = "historico"
+    DESCARTADO = "descartado"
+
+
+class OrigenHorario(StrEnum):
+    MANUAL = "manual"
+    PDF = "pdf"
+    EXCEL = "excel"
+    CSV = "csv"
+
+
+class TipoAsignatura(StrEnum):
+    MATERIA = "materia"  # clase con grupo, p. ej. "CÁLC. DIF."
+    ACTIVIDAD = "actividad"  # gestión, tutoría, residencia, investigación…
+
+
+class DiaSemana(StrEnum):
+    LUNES = "lunes"
+    MARTES = "martes"
+    MIERCOLES = "miercoles"
+    JUEVES = "jueves"
+    VIERNES = "viernes"
+    SABADO = "sabado"
+
+
 class Permiso(StrEnum):
     """Permisos individuales. Los roles agrupan permisos en la base de datos."""
 
@@ -31,6 +66,7 @@ class Permiso(StrEnum):
     DOCENTES_EDITAR = "docentes.editar"
     HORARIOS_VER = "horarios.ver"
     HORARIOS_EDITAR = "horarios.editar"
+    HORARIOS_CONFIRMAR = "horarios.confirmar"
     PERIODOS_GESTIONAR = "periodos.gestionar"
     ASISTENCIA_VER = "asistencia.ver"
     ASISTENCIA_REGISTRAR = "asistencia.registrar"

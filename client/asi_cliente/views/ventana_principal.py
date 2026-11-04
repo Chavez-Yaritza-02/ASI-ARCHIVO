@@ -1,7 +1,8 @@
 """Ventana principal: menú lateral y área de contenido.
 
-Cada módulo se agregará como una página en `SECCIONES` en su etapa
-correspondiente. Por ahora solo hay páginas provisionales.
+Cada módulo es una página de `SECCIONES`. Las pantallas ya construidas están en
+`PANTALLAS`; el resto muestra una página provisional con la etapa en que llegará.
+Cada pantalla se crea la primera vez que se abre.
 """
 
 from datetime import date
@@ -18,18 +19,29 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from asi_cliente.api.cliente import UsuarioSesion
+from asi_cliente.api.cliente import ClienteApi, UsuarioSesion
+from asi_cliente.views.catalogos import DOCENTES, VistaCatalogo, VistaCatalogos
+from asi_cliente.views.horarios import VistaHorarios
+from asi_cliente.views.periodos import VistaPeriodos
 
 # (título del menú, permiso necesario para verlo, etapa en que se implementa)
 SECCIONES = [
     ("Bitácora del día", "asistencia.ver", 4),
-    ("Docentes", "docentes.ver", 2),
     ("Horarios", "horarios.ver", 2),
-    ("Periodos", "periodos.gestionar", 2),
+    ("Docentes", "docentes.ver", 2),
+    ("Periodos", "horarios.ver", 2),
+    ("Catálogos", "horarios.ver", 2),
     ("Buscador", "docentes.ver", 5),
     ("Documentos", "documentos.ver", 6),
     ("Reportes", "reportes.ver", 7),
 ]
+
+PANTALLAS = {
+    "Horarios": VistaHorarios,
+    "Docentes": lambda api, u: VistaCatalogo(api, u, DOCENTES, "Docentes"),
+    "Periodos": VistaPeriodos,
+    "Catálogos": VistaCatalogos,
+}
 
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 _MESES = [
@@ -72,8 +84,9 @@ class VentanaPrincipal(QMainWindow):
     cambiar_tema = Signal()
     cerrar_sesion = Signal()
 
-    def __init__(self, usuario: UsuarioSesion):
+    def __init__(self, usuario: UsuarioSesion, api: ClienteApi | None = None):
         super().__init__()
+        self.api, self.usuario = api, usuario
         self.setWindowTitle("ASI-ARCHIVO")
         self.resize(1200, 760)
 
@@ -87,10 +100,12 @@ class VentanaPrincipal(QMainWindow):
 
         self.menu = QListWidget(objectName="menu")
         self.paginas = QStackedWidget()
-        for titulo, _permiso, etapa in secciones_visibles(usuario):
+        self.secciones = secciones_visibles(usuario)
+        self.creadas: set[int] = set()
+        for titulo, _permiso, etapa in self.secciones:
             self.menu.addItem(titulo)
             self.paginas.addWidget(_pagina_provisional(titulo, etapa))
-        self.menu.currentRowChanged.connect(self.paginas.setCurrentIndex)
+        self.menu.currentRowChanged.connect(self.abrir)
         self.menu.setCurrentRow(0)
         caja_lateral.addWidget(self.menu, 1)
 
@@ -114,3 +129,19 @@ class VentanaPrincipal(QMainWindow):
         caja.addWidget(lateral)
         caja.addWidget(self.paginas, 1)
         self.setCentralWidget(central)
+
+    def abrir(self, indice: int) -> None:
+        """Muestra una sección; la primera vez crea su pantalla real, si ya existe."""
+        titulo = self.secciones[indice][0]
+        if indice not in self.creadas and titulo in PANTALLAS and self.api is not None:
+            provisional = self.paginas.widget(indice)
+            self.paginas.removeWidget(provisional)
+            provisional.deleteLater()
+            self.paginas.insertWidget(indice, PANTALLAS[titulo](self.api, self.usuario))
+            self.creadas.add(indice)
+        self.paginas.setCurrentIndex(indice)
+
+    def abrir_seccion(self, titulo: str) -> QWidget:
+        indice = next(i for i, s in enumerate(self.secciones) if s[0] == titulo)
+        self.menu.setCurrentRow(indice)
+        return self.paginas.widget(indice)
