@@ -4,7 +4,8 @@ Las cuatro funcionan igual: buscar, ver activos/inactivos, crear, editar,
 activar y desactivar. Cada una se define con una `ConfigCatalogo`.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -37,6 +38,11 @@ class ConfigCatalogo:
     campos: list[Campo]
     descripcion: str = ""
     nuevo: str = ""  # texto del botón, p. ej. "Nueva asignatura"
+    # Datos auxiliares que se cargan de la API (p. ej. periodos para los grupos).
+    cargar_contexto: Callable[[ClienteApi, dict], None] | None = None
+    contexto: dict = field(default_factory=dict)
+    # Campos cuyas opciones dependen del contexto: clave -> función(contexto) -> opciones.
+    opciones: dict[str, Callable[[dict], list]] = field(default_factory=dict)
 
 
 DOCENTES = ConfigCatalogo(
@@ -95,7 +101,42 @@ def _config_clave(ruta: str, singular: str, nuevo: str) -> ConfigCatalogo:
     )
 
 
-GRUPOS = _config_clave("/grupos", "grupo", "Nuevo grupo")
+def _cargar_periodos(api: ClienteApi, contexto: dict) -> None:
+    contexto["periodos"] = {p["id"]: p["nombre"] for p in api.get("/periodos")}
+
+
+def _opciones_periodo(contexto: dict) -> list:
+    return [("— (pendiente)", None)] + [(n, i) for i, n in contexto.get("periodos", {}).items()]
+
+
+GRUPOS = ConfigCatalogo(
+    ruta="/grupos",
+    singular="grupo",
+    nuevo="Nuevo grupo",
+    permiso_editar="horarios.editar",
+    descripcion="Un grupo se identifica por periodo, carrera, semestre y letra. "
+    "Si falta alguno queda pendiente de validación.",
+    cargar_contexto=_cargar_periodos,
+    columnas=[],  # se definen abajo (usan el contexto)
+    campos=[
+        Campo("letra", "Letra", obligatorio=True),
+        Campo("carrera", "Carrera (p. ej. IEM)"),
+        Campo(
+            "semestre", "Semestre", "opciones", [("—", None)] + [(f"{n}º", n) for n in range(1, 13)]
+        ),
+        Campo("periodo_id", "Periodo", "opciones"),
+        Campo("descripcion", "Descripción"),
+    ],
+    opciones={"periodo_id": _opciones_periodo},
+)
+GRUPOS.columnas = [
+    Columna("Grupo", lambda d: d["clave"]),
+    Columna("Carrera", lambda d: d["carrera"] or "—"),
+    Columna("Semestre", lambda d: f"{d['semestre']}º" if d["semestre"] else "—"),
+    Columna("Periodo", lambda d: GRUPOS.contexto.get("periodos", {}).get(d["periodo_id"], "—")),
+    Columna("Validación", lambda d: "Pendiente" if d["pendiente_validacion"] else "Completo"),
+    Columna("Estado", lambda d: "Activo" if d["activo"] else "Inactivo"),
+]
 AULAS = _config_clave("/aulas", "aula", "Nueva aula")
 
 
@@ -145,8 +186,19 @@ class VistaCatalogo(QWidget):
             self.tabla.doubleClicked.connect(self.editar)
         self.recargar()
 
+    def _campos(self) -> list[Campo]:
+        """Campos del formulario, con las opciones que dependen de datos de la API."""
+        return [
+            replace(c, opciones=self.config.opciones[c.clave](self.config.contexto))
+            if c.clave in self.config.opciones
+            else c
+            for c in self.config.campos
+        ]
+
     def recargar(self) -> None:
         try:
+            if self.config.cargar_contexto:
+                self.config.cargar_contexto(self.api, self.config.contexto)
             filas = self.api.get(
                 self.config.ruta,
                 buscar=self.buscar.text().strip() or None,
@@ -165,7 +217,7 @@ class VistaCatalogo(QWidget):
         self.boton_estado.setText("Activar" if fila and not fila["activo"] else "Desactivar")
 
     def nuevo(self) -> None:
-        dialogo = DialogoFormulario(self.boton_nuevo.text(), self.config.campos, padre=self)
+        dialogo = DialogoFormulario(self.boton_nuevo.text(), self._campos(), padre=self)
         while dialogo.exec():
             try:
                 creado = self.api.post(self.config.ruta, _sin_vacios(dialogo.valores()))
@@ -181,7 +233,7 @@ class VistaCatalogo(QWidget):
         if fila is None:
             return
         dialogo = DialogoFormulario(
-            f"Editar {self.config.singular}", self.config.campos, fila, padre=self
+            f"Editar {self.config.singular}", self._campos(), fila, padre=self
         )
         while dialogo.exec():
             try:

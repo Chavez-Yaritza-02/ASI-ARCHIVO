@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from asi_shared import TipoAsignatura
 
@@ -74,6 +74,40 @@ class ClaveSalida(_Salida):
     clave: str
     descripcion: str
     activo: bool
+
+
+class GrupoCrear(BaseModel):
+    """Un grupo se identifica por periodo + carrera + semestre + letra. Si falta alguno,
+    se guarda igual pero queda pendiente de validación."""
+
+    letra: str = Field(min_length=1, max_length=5, validation_alias=AliasChoices("letra", "clave"))
+    periodo_id: int | None = None
+    carrera: str | None = Field(default=None, max_length=60)
+    semestre: int | None = Field(default=None, ge=1, le=12)
+    descripcion: str = Field(default="", max_length=200)
+
+
+class GrupoEditar(BaseModel):
+    letra: str | None = Field(
+        default=None, min_length=1, max_length=5, validation_alias=AliasChoices("letra", "clave")
+    )
+    periodo_id: int | None = None
+    carrera: str | None = Field(default=None, max_length=60)
+    semestre: int | None = Field(default=None, ge=1, le=12)
+    descripcion: str | None = Field(default=None, max_length=200)
+    activo: bool | None = None
+
+
+class GrupoSalida(_Salida):
+    id: int
+    clave: str
+    letra: str
+    periodo_id: int | None
+    carrera: str | None
+    semestre: int | None
+    descripcion: str
+    activo: bool
+    pendiente_validacion: bool
 
 
 # --- Periodos ---

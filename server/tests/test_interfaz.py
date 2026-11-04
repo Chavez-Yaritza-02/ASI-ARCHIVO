@@ -169,7 +169,9 @@ def datos(api_admin):
         "gestion": api_admin.post(
             "/asignaturas", {"nombre": "GESTIÓN ACADÉMICA", "tipo": "actividad"}
         ),
-        "grupo": api_admin.post("/grupos", {"clave": "A"}),
+        "grupo": api_admin.post(
+            "/grupos", {"letra": "A", "periodo_id": periodo["id"], "carrera": "IEM", "semestre": 3}
+        ),
         "aula": api_admin.post("/aulas", {"clave": "M01"}),
     }
 

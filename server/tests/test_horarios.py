@@ -30,10 +30,13 @@ def base(cliente, como_admin):
         "calculo": crear("/asignaturas", {"nombre": "CÁLC. DIF."}),
         "fisica": crear("/asignaturas", {"nombre": "FIS. GRAL"}),
         "gestion": crear("/asignaturas", {"nombre": "GESTIÓN ACADÉMICA", "tipo": "actividad"}),
-        "grupo_a": crear("/grupos", {"clave": "A"}),
         "m01": crear("/aulas", {"clave": "M01"}),
         "m02": crear("/aulas", {"clave": "M02"}),
     }
+    # Grupo completo (periodo + carrera + semestre + letra): no queda pendiente de validación.
+    ids["grupo_a"] = crear(
+        "/grupos", {"letra": "A", "periodo_id": ids["periodo"], "carrera": "IEM", "semestre": 3}
+    )
     cliente.post(f"/periodos/{ids['periodo']}/activar", headers=como_admin)
     return ids
 
@@ -247,3 +250,41 @@ def test_cambios_de_horario_quedan_auditados(cliente, como_admin, base, bloques_
     edicion = registros[4]
     assert len(edicion.antes["bloques"]) == 3 and len(edicion.despues["bloques"]) == 1
     assert all(a.usuario_id is not None for a in registros)
+
+
+def test_materia_con_solo_la_letra_queda_pendiente_y_se_advierte(cliente, como_admin, base):
+    h = nuevo_borrador(cliente, como_admin, base)
+    r = cliente.put(
+        f"/horarios/{h['id']}/bloques",
+        json=[
+            {
+                **bloque("lunes", "07:00", "08:00", base["calculo"], None, base["m01"]),
+                "grupo_letra": "b",
+            }
+        ],
+        headers=como_admin,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["bloques"][0]["grupo_letra"] == "B"
+    assert any("pendiente de validación" in a for a in r.json()["advertencias"])
+    r = cliente.post(f"/horarios/{h['id']}/confirmar", json={}, headers=como_admin)
+    assert r.status_code == 409
+    r = cliente.post(
+        f"/horarios/{h['id']}/confirmar", json={"aceptar_advertencias": True}, headers=como_admin
+    )
+    assert r.json()["estado"] == "vigente"
+
+    # Si se elige un grupo completo, la letra pendiente se descarta.
+    v2 = nuevo_borrador(cliente, como_admin, base, basado_en_id=h["id"])
+    r = cliente.put(
+        f"/horarios/{v2['id']}/bloques",
+        json=[
+            {
+                **bloque("lunes", "07:00", "08:00", base["calculo"], base["grupo_a"], base["m01"]),
+                "grupo_letra": "B",
+            }
+        ],
+        headers=como_admin,
+    )
+    assert r.json()["bloques"][0]["grupo_letra"] is None
+    assert not any("pendiente" in a for a in r.json()["advertencias"])

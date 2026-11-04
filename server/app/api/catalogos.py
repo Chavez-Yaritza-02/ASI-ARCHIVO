@@ -21,6 +21,9 @@ from app.schemas.catalogos import (
     DocenteCrear,
     DocenteEditar,
     DocenteSalida,
+    GrupoCrear,
+    GrupoEditar,
+    GrupoSalida,
 )
 from app.services import catalogos as servicio
 from asi_shared import Permiso
@@ -46,8 +49,9 @@ def crear_router(
         _: Lector,
         buscar: str = "",
         activo: Annotated[bool | None, Query(description="Filtra por estado")] = None,
+        periodo_id: Annotated[int | None, Query(description="Solo grupos")] = None,
     ):
-        return servicio.listar(sesion, entidad, buscar, activo)
+        return servicio.listar(sesion, entidad, buscar, activo, periodo_id)
 
     @router.get("/{id_}", response_model=salida)
     def consultar(id_: int, sesion: SesionDB, _: Lector):
@@ -98,9 +102,9 @@ grupos = crear_router(
     "grupo",
     "/grupos",
     "catálogos",
-    ClaveCrear,
-    ClaveEditar,
-    ClaveSalida,
+    GrupoCrear,
+    GrupoEditar,
+    GrupoSalida,
     Permiso.HORARIOS_VER,
     Permiso.HORARIOS_EDITAR,
 )

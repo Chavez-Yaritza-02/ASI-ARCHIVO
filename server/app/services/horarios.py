@@ -42,6 +42,8 @@ class BloqueEntrada:
     asignatura_id: int
     grupo_id: int | None = None
     aula_id: int | None = None
+    # Letra leída del documento cuando aún no se sabe a qué grupo corresponde.
+    grupo_letra: str | None = None
 
 
 def _texto_bloque(dia: int, inicio: time, fin: time) -> str:
@@ -109,7 +111,7 @@ def validar_bloques(sesion: Session, bloques: list[BloqueEntrada]) -> list[str]:
                 f"{_texto_bloque(b.dia, b.hora_inicio, b.hora_fin)}: la asignatura "
                 "no existe o está inactiva"
             )
-        elif asignatura.tipo == "materia" and b.grupo_id is None:
+        elif asignatura.tipo == "materia" and b.grupo_id is None and not b.grupo_letra:
             errores.append(
                 f"{_texto_bloque(b.dia, b.hora_inicio, b.hora_fin)}: la materia "
                 f"{asignatura.nombre} necesita grupo"
@@ -143,6 +145,17 @@ def advertencias(sesion: Session, horario: Horario) -> list[str]:
     avisos: list[str] = []
     if not horario.bloques:
         return avisos
+
+    pendientes = [
+        b
+        for b in horario.bloques
+        if (b.grupo_id is None and b.grupo_letra) or (b.grupo and b.grupo.pendiente_validacion)
+    ]
+    if pendientes:
+        avisos.append(
+            f"{len(pendientes)} bloque(s) con grupo pendiente de validación "
+            "(falta carrera, semestre o periodo)"
+        )
 
     # El aula ya está ocupada a esa hora por otro docente (horarios vigentes del periodo).
     otros = sesion.scalars(
@@ -179,7 +192,15 @@ def advertencias(sesion: Session, horario: Horario) -> list[str]:
 
 def _firma(horario: Horario) -> list[tuple]:
     return sorted(
-        (b.dia, b.hora_inicio, b.hora_fin, b.asignatura_id, b.grupo_id, b.aula_id)
+        (
+            b.dia,
+            b.hora_inicio,
+            b.hora_fin,
+            b.asignatura_id,
+            b.grupo_id,
+            b.grupo_letra or "",
+            b.aula_id,
+        )
         for b in horario.bloques
     )
 
@@ -192,6 +213,7 @@ def _bloques_dict(horario: Horario) -> list[dict]:
             "fin": b.hora_fin,
             "asignatura_id": b.asignatura_id,
             "grupo_id": b.grupo_id,
+            "grupo_letra": b.grupo_letra,
             "aula_id": b.aula_id,
         }
         for b in horario.bloques
@@ -266,6 +288,7 @@ def crear_borrador(
                 hora_fin=b.hora_fin,
                 asignatura_id=b.asignatura_id,
                 grupo_id=b.grupo_id,
+                grupo_letra=b.grupo_letra,
                 aula_id=b.aula_id,
             )
             for b in base.bloques
@@ -305,7 +328,11 @@ def reemplazar_bloques(
     if errores:
         raise ErrorNegocio("El horario tiene errores", 422, errores)
     antes = _bloques_dict(horario)
-    horario.bloques = [BloqueHorario(**b.__dict__) for b in bloques]
+    # Si ya se eligió un grupo, la letra pendiente deja de tener sentido.
+    horario.bloques = [
+        BloqueHorario(**{**b.__dict__, "grupo_letra": None if b.grupo_id else b.grupo_letra})
+        for b in bloques
+    ]
     sesion.flush()
     sesion.refresh(horario)
     auditar(

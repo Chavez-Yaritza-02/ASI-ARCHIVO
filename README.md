@@ -9,12 +9,14 @@ La arquitectura, el modelo de datos y las etapas están en [docs/ARQUITECTURA.md
 
 - [uv](https://docs.astral.sh/uv/) (administra Python 3.12 y las dependencias)
 - PostgreSQL 17
+- **Solo en el servidor:** Tesseract OCR con idiomas inglés y español, para importar
+  horarios en PDF. Las computadoras cliente (Windows o Mac) no lo necesitan.
 
 ## Configuración en macOS (desarrollo)
 
 ```bash
 # 1. Herramientas
-brew install uv postgresql@17
+brew install uv postgresql@17 tesseract tesseract-lang
 brew services start postgresql@17
 export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 
@@ -39,7 +41,10 @@ cd ..
 ```
 
 > En Windows los pasos son equivalentes: instala uv y PostgreSQL con sus instaladores
-> oficiales. Las apps de producción para Windows se generarán en la Etapa 8.
+> oficiales. Si el servidor corre en Windows, instala también Tesseract (con los idiomas
+> `eng` y `spa`) y, si no queda en el PATH, define
+> `ASI_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe`.
+> Las apps de producción para Windows se generarán en la Etapa 8.
 
 ## Ejecutar
 
@@ -95,15 +100,47 @@ uv run ruff format .     # formato automático
 
 GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](.github/workflows/pruebas.yml)).
 
-## Prueba de OCR (Etapa 1b)
+## Uso: importar horarios desde PDF (Etapa 3)
 
-La herramienta de [herramientas/ocr_prueba/](herramientas/ocr_prueba/) extrae horarios de
-PDFs escaneados y mide su precisión. Resultados y método en
-[docs/EVALUACION_OCR.md](docs/EVALUACION_OCR.md). Requiere Tesseract
-(`brew install tesseract tesseract-lang`) y el grupo de dependencias `ocr`:
+1. En **Catálogos** captura (o revisa) aulas, asignaturas y grupos del periodo. Entre más
+   completo esté el catálogo, más datos se asignan solos.
+2. En **Importar horarios** elige el periodo y pulsa **Importar archivo…** (ZIP o PDF).
+   El servidor hace el OCR en segundo plano; la pantalla muestra el avance.
+3. Elige cada página y revísala. Colores de la cuadrícula:
+   - **Verde:** coincide con el catálogo o ya lo confirmaste.
+   - **Amarillo:** sugerencia; acéptala (botón o doble clic → *Aplicar*).
+   - **Rojo:** falta elegir (doble clic: imagen del documento, texto leído y opción de
+     crear un registro nuevo).
+   - **Morado:** solo se conoce la letra del grupo; queda pendiente de validar.
+4. **Aprobar: crear borrador** solo se habilita cuando no queda nada pendiente. El
+   horario se crea en **borrador**: confírmalo después en **Horarios**.
+
+Las páginas repetidas (mismo QR) se marcan como *Duplicada*, y un PDF ya importado no se
+vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
+
+## Datos reales y base aislada
+
+Los documentos reales se guardan fuera del repositorio, en `~/ASI-ARCHIVO-DATOS/`. Esa
+carpeta no se sincroniza con la nube y tiene permisos solo para su dueño. Para pruebas
+con datos reales existe una base de datos aparte, `asi_archivo_ocr`, con su propio usuario.
+Sus credenciales están en `~/ASI-ARCHIVO-DATOS/etapa3/.env.ocr`. Para levantar la API
+contra esa base:
 
 ```bash
-uv run --group ocr python herramientas/ocr_prueba/extraer.py CARPETA_PDFS salida.json
+set -a && source ~/ASI-ARCHIVO-DATOS/etapa3/.env.ocr && set +a
+uv run uvicorn app.main:app --app-dir server --port 8001
+```
+
+Para eliminarla por completo: `dropdb asi_archivo_ocr && dropuser asi_ocr`.
+
+## Prueba de OCR (Etapa 1b)
+
+La herramienta de [herramientas/ocr_prueba/](herramientas/ocr_prueba/) aplica el mismo
+OCR del importador a una carpeta de PDFs y mide su precisión contra una transcripción
+verificada. Resultados y método en [docs/EVALUACION_OCR.md](docs/EVALUACION_OCR.md):
+
+```bash
+uv run python herramientas/ocr_prueba/extraer.py CARPETA_PDFS salida.json
 ```
 
 ## Datos institucionales

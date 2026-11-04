@@ -23,15 +23,8 @@ dev = [
     "asi-cliente",
     "pytest>=8.3",
     "pytest-qt>=4.4",
+    "segno>=1.6",  # genera códigos QR para los PDF ficticios de prueba
     "ruff>=0.8",
-]
-# Solo para la herramienta de prueba de OCR (requiere Tesseract instalado en el sistema):
-#   uv sync --group ocr
-ocr = [
-    "pymupdf>=1.25",
-    "pytesseract>=0.3.13",
-    "opencv-python-headless>=4.10",
-    "numpy>=2.1",
 ]
 
 [tool.ruff]
@@ -42,10 +35,14 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "asi_cliente", "asi_shared", "analisis", "evaluar", "extraer"]
+known-first-party = ["app", "asi_cliente", "asi_shared"]
 
 [tool.pytest.ini_options]
 testpaths = ["server/tests", "client/tests", "herramientas/tests"]
-pythonpath = ["herramientas/ocr_prueba"]
 addopts = "--import-mode=importlib"
-filterwarnings = ["ignore::DeprecationWarning:fastapi.testclient", "ignore:Using `httpx`"]
+pythonpath = ["server/tests"]  # generador de PDFs ficticios
+filterwarnings = [
+    "ignore::DeprecationWarning:fastapi.testclient",
+    "ignore:Using `httpx`",
+    "ignore:builtin type (SwigPy|swigvarlink)",  # interno de PyMuPDF
+]
