@@ -1,24 +1,32 @@
 """Captura independiente por hora, parciales, historial y reportes."""
 
-from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt, QTime
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDateEdit,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QTabWidget,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from asi_cliente.api.cliente import ErrorApi
-from asi_cliente.views.bitacora import DialogoAsistencia, DialogoHistorial
+from asi_cliente.views.asistencia_lote import DialogoCapturaLote
+from asi_cliente.views.bitacora import DialogoHistorial
 from asi_cliente.views.comunes import Columna, Tabla, encabezado, mostrar_error
 
 NOMBRES = {
@@ -32,58 +40,130 @@ NOMBRES = {
 }
 
 
-class DialogoAsistenciaHora(DialogoAsistencia):
+class DialogoAsistenciaHora(QDialog):
+    """Formulario horario propio: los cambios de estado no disparan señales recursivas."""
+
     def __init__(self, fila, padre=None):
-        adaptada = {
-            **fila,
-            "docente": {"id": fila["docente_id"], "nombre": fila["docente_nombre"]},
-            "actividades": [
-                {
-                    "asignatura": fila["asignatura"],
-                    "grupo": fila["grupo"],
-                    "aula": fila["aula"],
-                    "inicio": fila["programado_inicio"],
-                    "fin": fila["programado_fin"],
-                }
-            ],
-        }
-        super().__init__(adaptada, date.fromisoformat(fila["fecha"]), padre)
+        super().__init__(padre)
+        self.fila = fila
+        self.es_correccion = fila["asistencia"] is not None
         self.setWindowTitle("Asistencia de esta hora de clase")
+        self.resize(600, 500)
+        self.estado = QComboBox()
+        for clave in ("asistio", "falto", "retardo", "justificado", "parcial"):
+            self.estado.addItem(NOMBRES[clave], clave)
+        self.entrada = QTimeEdit(displayFormat="HH:mm")
+        self.salida = QTimeEdit(displayFormat="HH:mm")
+        self.usar_entrada = QCheckBox("Hora real de entrada")
+        self.usar_salida = QCheckBox("Hora real de salida")
         self.minutos_justificados = QSpinBox()
-        self.minutos_justificados.setRange(0, 60)
-        fila_extra = QHBoxLayout()
-        fila_extra.addWidget(QLabel("Minutos justificados (solo en asistencia parcial)"))
-        fila_extra.addWidget(self.minutos_justificados)
-        self.layout().insertLayout(self.layout().count() - 2, fila_extra)
-        self.estado.addItem("Parcial", "parcial")
-        registro = fila.get("asistencia")
-        if registro:
-            self.estado.setCurrentIndex(self.estado.findData(registro["estado"]))
-            if registro["estado"] == "parcial":
-                self.minutos_justificados.setValue(registro["minutos_justificados"])
+        self.minutos_justificados.setRange(0, fila["minutos"]["programadas"])
+        self.justificacion = QLineEdit()
+        self.observaciones = QPlainTextEdit()
+        self.observaciones.setFixedHeight(65)
+        self.motivo = QLineEdit()
+        self.autorizar = QCheckBox("Excepción autorizada en día inhábil o suspendido")
+        self.autorizar.setVisible(not fila["dia_habil"] and not self.es_correccion)
+        self.aviso = QLabel("", wordWrap=True)
+        self.mensaje = QLabel("", objectName="error", wordWrap=True)
+        registro = fila["asistencia"] or {}
+        for control, clave, programado in (
+            (self.entrada, "hora_entrada", "programado_inicio"),
+            (self.salida, "hora_salida", "programado_fin"),
+        ):
+            control.setTime(
+                QTime.fromString((registro.get(clave) or fila[programado])[:5], "HH:mm")
+            )
+        self.estado.setCurrentIndex(max(0, self.estado.findData(registro.get("estado", "asistio"))))
+        self.observaciones.setPlainText(registro.get("observaciones", ""))
+        self.justificacion.setText(registro.get("justificacion", ""))
+        if registro.get("estado") == "parcial":
+            self.minutos_justificados.setValue(registro["minutos_justificados"])
+        self.usar_entrada.setChecked(bool(registro.get("hora_entrada")))
+        self.usar_salida.setChecked(bool(registro.get("hora_salida")))
+        formulario = QFormLayout()
+        etiqueta = QLabel(
+            f"{fila['docente_nombre']} · {fila['fecha']}\n"
+            f"{fila['programado_inicio'][:5]}–{fila['programado_fin'][:5]} · "
+            f"{fila['asignatura']}",
+            wordWrap=True,
+        )
+        etiqueta.setTextFormat(Qt.PlainText)
+        formulario.addRow("Estado", self.estado)
+        formulario.addRow(self.usar_entrada, self.entrada)
+        formulario.addRow(self.usar_salida, self.salida)
+        formulario.addRow("Minutos justificados (parcial)", self.minutos_justificados)
+        formulario.addRow("Justificación", self.justificacion)
+        formulario.addRow("Observaciones", self.observaciones)
+        if self.es_correccion:
+            formulario.addRow("Motivo de la corrección", self.motivo)
+        botones = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        botones.button(QDialogButtonBox.Save).setText("Guardar")
+        botones.button(QDialogButtonBox.Cancel).setText("Cancelar")
+        botones.accepted.connect(self._aceptar)
+        botones.rejected.connect(self.reject)
+        capa = QVBoxLayout(self)
+        capa.addWidget(etiqueta)
+        capa.addLayout(formulario)
+        for w in (self.autorizar, self.aviso, self.mensaje, botones):
+            capa.addWidget(w)
+        self.estado.currentIndexChanged.connect(self._actualizar)
+        self.usar_entrada.toggled.connect(self.entrada.setEnabled)
+        self.usar_salida.toggled.connect(self.salida.setEnabled)
+        self.entrada.timeChanged.connect(self._aviso_retardo)
         self._actualizar()
 
-    def _actualizar(self):
-        super()._actualizar()
+    def _actualizar(self, *_):
         estado = self.estado.currentData()
-        if estado in ("falto", "justificado"):
-            self.usar_entrada.setChecked(False)
-            self.usar_salida.setChecked(False)
-            self.entrada.setEnabled(False)
-            self.salida.setEnabled(False)
-        if estado == "parcial":
-            self.usar_entrada.setChecked(True)
-            self.usar_salida.setChecked(True)
-        if hasattr(self, "minutos_justificados"):
-            self.minutos_justificados.setEnabled(estado == "parcial")
-            self.justificacion.setEnabled(estado in ("parcial", "justificado"))
+        parcial = estado == "parcial"
+        for usar, control in ((self.usar_entrada, self.entrada), (self.usar_salida, self.salida)):
+            usar.blockSignals(True)
+            if estado in ("falto", "justificado"):
+                usar.setChecked(False)
+            elif parcial or estado == "retardo":
+                usar.setChecked(True)
+            usar.setEnabled(estado not in ("falto", "justificado"))
+            control.setEnabled(usar.isChecked())
+            usar.blockSignals(False)
+        self.minutos_justificados.setEnabled(parcial)
+        self.justificacion.setEnabled(parcial or estado == "justificado")
+        self._aviso_retardo()
+
+    def _aviso_retardo(self, *_):
+        self.aviso.clear()
+        inicio = QTime.fromString(self.fila["programado_inicio"][:5], "HH:mm")
+        tarde = inicio.secsTo(self.entrada.time()) // 60
+        if self.usar_entrada.isChecked() and tarde > self.fila["tolerancia_minutos"]:
+            self.aviso.setText(
+                f"Entrada {tarde} min después del inicio; "
+                f"tolerancia {self.fila['tolerancia_minutos']} min."
+            )
 
     def datos(self):
-        datos = super().datos()
-        datos["minutos_justificados"] = (
-            self.minutos_justificados.value() if datos["estado"] == "parcial" else 0
-        )
+        estado = self.estado.currentData()
+        datos = {
+            "estado": estado,
+            "hora_entrada": self.entrada.time().toString("HH:mm")
+            if self.usar_entrada.isChecked()
+            else None,
+            "hora_salida": self.salida.time().toString("HH:mm")
+            if self.usar_salida.isChecked()
+            else None,
+            "minutos_justificados": self.minutos_justificados.value() if estado == "parcial" else 0,
+            "justificacion": self.justificacion.text().strip(),
+            "observaciones": self.observaciones.toPlainText().strip(),
+        }
+        if self.es_correccion:
+            datos["motivo"] = self.motivo.text().strip()
+        elif not self.fila["dia_habil"]:
+            datos["autorizar_dia_inhabil"] = self.autorizar.isChecked()
         return datos
+
+    def _aceptar(self):
+        if self.es_correccion and len(self.motivo.text().strip()) < 5:
+            self.mensaje.setText("Escribe el motivo de la corrección.")
+            return
+        self.accept()
 
 
 class VistaAsistenciaHora(QWidget):
@@ -127,12 +207,16 @@ class VistaAsistenciaHora(QWidget):
             Columna("Justificados min", lambda f: f["minutos"]["justificadas"]),
         ]
         self.tabla = Tabla(columnas)
+        self.tabla.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.historicos = Tabla(columnas)
         self.pestanas = QTabWidget()
         self.pestanas.addTab(self.tabla, "Programa vigente en la fecha")
         self.pestanas.addTab(self.historicos, "Capturas fuera del programa actual")
         self.boton_registrar = QPushButton("Registrar / corregir esta hora")
         self.boton_registrar.setVisible(usuario.puede("asistencia.registrar"))
+        self.boton_lote = QPushButton("Registrar horas seleccionadas")
+        self.boton_lote.setVisible(usuario.puede("asistencia.registrar"))
+        self.boton_lote.clicked.connect(self.registrar_lote)
         self.boton_historial = QPushButton("Historial de esta hora")
         self.boton_pdf = QPushButton("PDF del día")
         self.boton_excel = QPushButton("Excel del día")
@@ -165,7 +249,13 @@ class VistaAsistenciaHora(QWidget):
         capa.addWidget(self.resumen)
         capa.addWidget(self.pestanas, 1)
         acciones = QHBoxLayout()
-        for b in (self.boton_registrar, self.boton_historial, self.boton_pdf, self.boton_excel):
+        for b in (
+            self.boton_registrar,
+            self.boton_lote,
+            self.boton_historial,
+            self.boton_pdf,
+            self.boton_excel,
+        ):
             acciones.addWidget(b)
         capa.addLayout(acciones)
         rango = QHBoxLayout()
@@ -267,6 +357,10 @@ class VistaAsistenciaHora(QWidget):
             )
         )
         self.boton_historial.setEnabled(bool(f and f["asistencia"]))
+        self.boton_lote.setEnabled(
+            self.pestanas.currentWidget() is self.tabla
+            and bool(self.tabla.selectionModel().selectedRows())
+        )
         for b in (self.boton_pdf, self.boton_excel):
             b.setEnabled(self.datos is not None)
 
@@ -291,6 +385,32 @@ class VistaAsistenciaHora(QWidget):
                             "programado_inicio": f["programado_inicio"],
                         },
                     )
+            except ErrorApi as e:
+                mostrar_error(self, e)
+                continue
+            self.cargar()
+            break
+
+    def registrar_lote(self):
+        if (
+            not self.usuario.puede("asistencia.registrar")
+            or self.pestanas.currentWidget() is not self.tabla
+        ):
+            return
+        filas = [self.tabla.filas[i.row()] for i in self.tabla.selectionModel().selectedRows()]
+        if not filas:
+            return
+        if len(filas) > 100 or any(
+            f["asistencia"] or f.get("bloqueada_por_registro_previo") for f in filas
+        ):
+            mostrar_error(
+                self, ErrorApi("Selecciona hasta 100 horas pendientes sin capturas previas.")
+            )
+            return
+        dialogo = DialogoCapturaLote(filas, self)
+        while dialogo.exec():
+            try:
+                self.api.post("/asistencias/horas/lote", dialogo.datos())
             except ErrorApi as e:
                 mostrar_error(self, e)
                 continue
