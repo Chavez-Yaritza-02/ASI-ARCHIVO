@@ -94,8 +94,17 @@ def _privacidad_windows(ruta):
         "$ErrorActionPreference='Stop'; "
         "$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; "
         "$acl=New-Object System.Security.AccessControl.DirectorySecurity; "
-        "$acl.SetSecurityDescriptorSddlForm(('D:P(A;OICI;FA;;;'+$sid+')')); "
-        "Set-Acl -LiteralPath $env:ASI_ARCHIVO_ACL_DESTINO -AclObject $acl"
+        "$acl.SetSecurityDescriptorSddlForm(('D:P(A;OICI;FA;;;'+$sid+')'), "
+        "[System.Security.AccessControl.AccessControlSections]::Access); "
+        "Set-Acl -LiteralPath $env:ASI_ARCHIVO_ACL_DESTINO -AclObject $acl; "
+        "$aplicado=Get-Acl -LiteralPath $env:ASI_ARCHIVO_ACL_DESTINO; "
+        "$reglas=$aplicado.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]); "
+        "if ((-not $aplicado.AreAccessRulesProtected) -or ($reglas.Count -ne 1) -or "
+        "($reglas[0].IdentityReference.Value -ne $sid) -or "
+        "($reglas[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) "
+        "-or ($reglas[0].FileSystemRights -ne "
+        "[System.Security.AccessControl.FileSystemRights]::FullControl)) "
+        "{ throw 'No se pudo verificar la DACL privada' }"
     )
     try:
         resultado = subprocess.run(
@@ -107,7 +116,10 @@ def _privacidad_windows(ruta):
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ErrorNegocio("No se pudo proteger el almacén con permisos NTFS", 503) from error
     if resultado.returncode:
-        raise ErrorNegocio("El almacén requiere un volumen NTFS con permisos privados", 503)
+        detalle = resultado.stderr.decode(errors="replace")[:2000]
+        raise ErrorNegocio(
+            "El almacén requiere un volumen NTFS con permisos privados", 503
+        ) from RuntimeError(detalle)
 
 
 def nombre_seguro(nombre):
