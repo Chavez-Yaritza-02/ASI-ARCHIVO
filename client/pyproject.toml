@@ -8,6 +8,8 @@ dependencies = [
     "pyside6>=6.8",
     "httpx>=0.28",
     "keyring>=25.5",
+    # Usa los certificados de confianza del sistema (Windows), no solo los de Python.
+    "truststore>=0.10",
 ]
 
 [project.scripts]

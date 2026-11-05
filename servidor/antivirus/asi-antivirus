@@ -1,0 +1,5 @@
+#!/bin/sh
+# Analiza un archivo con el servicio ClamAV del contenedor "clamav" (firmas en memoria).
+# --stream envía el contenido: el servicio de antivirus no necesita acceso al almacén.
+# Códigos de salida (igual que clamscan): 0 limpio, 1 infectado, 2 error.
+exec clamdscan --config-file=/etc/clamav/clamd-cliente.conf --stream --no-summary "$@"

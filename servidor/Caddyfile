@@ -1,0 +1,18 @@
+# HTTPS para ASI-ARCHIVO. Valores en servidor/.env:
+#   ASI_DOMINIO  nombre o IP con el que las PCs llegan al servidor
+#   ASI_TLS      "internal" (red interna: autoridad propia) o un correo (Let's Encrypt)
+{
+	admin off
+}
+
+{$ASI_DOMINIO} {
+	tls {$ASI_TLS}
+	request_body {
+		max_size 70MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy api:8000
+}

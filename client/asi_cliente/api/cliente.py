@@ -2,6 +2,7 @@
 nunca se conecta directamente a la base de datos."""
 
 import os
+import ssl
 import sys
 from contextlib import suppress
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 import keyring
+import truststore
 from keyring.errors import KeyringError
 
 SERVICIO_LLAVERO = "ASI-ARCHIVO"
@@ -80,8 +82,15 @@ class ClienteApi:
             # Escritura amplia: subir un ZIP de horarios por internet puede tardar.
             tiempo = httpx.Timeout(120, connect=8, write=300)
             url = validar_url(url, solo_https=getattr(sys, "frozen", False))
+            # Certificados de confianza del sistema operativo: así funciona tanto un
+            # certificado público como uno interno instalado por el área de TI en Windows.
+            verificacion = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             http = httpx.Client(
-                base_url=url, timeout=tiempo, transport=transporte, verify=True, trust_env=False
+                base_url=url,
+                timeout=tiempo,
+                transport=transporte,
+                verify=verificacion,
+                trust_env=False,
             )
         self._http = http
         origen = str(http.base_url).rstrip("/")

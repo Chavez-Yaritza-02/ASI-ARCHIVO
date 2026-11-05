@@ -50,7 +50,6 @@ SECCIONES = [
     ("Ubicación programada", "horarios.ver", 5),
     ("Tolerancia de retardos", "asistencia.ver", 5),
     ("Documentos", "documentos.ver", 6),
-    ("Reportes", "reportes.ver", 7),
 ]
 
 PANTALLAS = {

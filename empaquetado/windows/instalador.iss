@@ -1,4 +1,4 @@
-#define AppVersion "0.7.0"
+#define AppVersion "1.0.0"
 [Setup]
 AppId={{B55FC21D-6755-44C2-8F62-5271859D0070}
 AppName=ASI-ARCHIVO
@@ -23,9 +23,15 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
 Source: "..\..\dist\ASI-ARCHIVO\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\Manual de uso.html"; DestDir: "{app}"; Flags: ignoreversion
+
+[Tasks]
+Name: "escritorio"; Description: "Crear un acceso directo en el escritorio"; GroupDescription: "Accesos directos:"
 
 [Icons]
 Name: "{group}\ASI-ARCHIVO"; Filename: "{app}\ASI-ARCHIVO.exe"
+Name: "{userdesktop}\ASI-ARCHIVO"; Filename: "{app}\ASI-ARCHIVO.exe"; Tasks: escritorio
+Name: "{group}\Manual de uso"; Filename: "{app}\Manual de uso.html"
 Name: "{group}\Configurar conexión"; Filename: "{app}\ASI-ARCHIVO.exe"; Parameters: "--configurar"
 
 [Run]
