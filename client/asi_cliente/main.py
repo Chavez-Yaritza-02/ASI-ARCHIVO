@@ -3,6 +3,7 @@
 Ejecutar en desarrollo:  uv run asi-archivo
 """
 
+import os
 import sys
 
 from PySide6.QtCore import QSettings
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from asi_cliente.api.cliente import ClienteApi, ErrorApi
 from asi_cliente.theme.estilos import hoja_de_estilo
+from asi_cliente.views.configuracion_inicial import ConfiguracionInicial
 from asi_cliente.views.login import VentanaLogin
 from asi_cliente.views.ventana_principal import VentanaPrincipal
 
@@ -33,7 +35,7 @@ class Aplicacion:
 
     def iniciar(self) -> bool:
         correo = self.preferencias.value("ultimo_correo", "")
-        usuario = self.api.restaurar_sesion(correo) if correo else None
+        usuario = self.api.usuario or (self.api.restaurar_sesion(correo) if correo else None)
         if usuario is None:
             if not self.api.servidor_disponible():
                 QMessageBox.warning(
@@ -44,6 +46,8 @@ class Aplicacion:
                 )
             login = VentanaLogin(self.api, correo)
             if login.exec() != QDialog.Accepted:
+                if login.reconfigurar and self.configurar_servidor():
+                    return self.iniciar()
                 return False
             usuario = login.usuario
             self.preferencias.setValue("ultimo_correo", usuario.correo)
@@ -52,6 +56,16 @@ class Aplicacion:
         self.ventana.cambiar_tema.connect(self.alternar_tema)
         self.ventana.cerrar_sesion.connect(self.salir_de_sesion)
         self.ventana.show()
+        return True
+
+    def configurar_servidor(self):
+        dialogo = ConfiguracionInicial(self.preferencias.value("servidor_url", ""))
+        if dialogo.exec() != QDialog.Accepted:
+            return False
+        self.api.cerrar()
+        self.api = dialogo.api
+        self.preferencias.setValue("servidor_url", dialogo.url_validada)
+        self.preferencias.setValue("ultimo_correo", self.api.usuario.correo)
         return True
 
     def salir_de_sesion(self) -> None:
@@ -67,12 +81,27 @@ class Aplicacion:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("ASI-ARCHIVO")
-    try:
-        api = ClienteApi()
-    except ErrorApi as error:
-        QMessageBox.critical(None, "ASI-ARCHIVO", str(error))
-        sys.exit(1)
+    if "--autoprueba" in sys.argv:
+        from asi_cliente.autoprueba import ejecutar
+
+        sys.exit(ejecutar(app))
+    preferencias = QSettings("TecMM-Zapopan", "ASI-ARCHIVO")
+    direccion = os.environ.get("ASI_SERVIDOR_URL") or preferencias.value("servidor_url", "")
+    if not direccion or "--configurar" in sys.argv:
+        dialogo = ConfiguracionInicial(direccion)
+        if dialogo.exec() != QDialog.Accepted:
+            sys.exit(0)
+        api = dialogo.api
+        preferencias.setValue("servidor_url", dialogo.url_validada)
+        preferencias.setValue("ultimo_correo", api.usuario.correo)
+    else:
+        try:
+            api = ClienteApi(direccion)
+        except ErrorApi as error:
+            QMessageBox.critical(None, "ASI-ARCHIVO", str(error))
+            sys.exit(1)
     aplicacion = Aplicacion(app, api)
+    app.aboutToQuit.connect(lambda: aplicacion.api.cerrar())
     if not aplicacion.iniciar():
         sys.exit(0)
     sys.exit(app.exec())

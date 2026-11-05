@@ -2,6 +2,7 @@
 nunca se conecta directamente a la base de datos."""
 
 import os
+import sys
 from contextlib import suppress
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -35,11 +36,33 @@ class UsuarioSesion:
         return permiso in self.permisos
 
 
-def validar_url(url: str) -> str:
+def validar_url(url: str, *, solo_https: bool = False) -> str:
     """Solo se permite HTTP sin cifrar contra la propia computadora (desarrollo)."""
-    partes = urlparse(url)
-    if partes.scheme == "https" or (partes.scheme == "http" and partes.hostname in _HOSTS_LOCALES):
-        return url.rstrip("/")
+    try:
+        partes = urlparse(url.strip())
+        puerto = partes.port
+        host = partes.hostname
+        valido = (
+            bool(host)
+            and not partes.username
+            and not partes.password
+            and not partes.query
+            and not partes.fragment
+            and partes.path in ("", "/")
+            and not any(c.isspace() or ord(c) < 32 or c == "\\" for c in url)
+        )
+    except ValueError:
+        valido = False
+    if valido and (
+        partes.scheme == "https"
+        or (not solo_https and partes.scheme == "http" and host in _HOSTS_LOCALES)
+    ):
+        host = host.encode("idna").decode().lower()
+        host = f"[{host}]" if ":" in host else host
+        sufijo = (
+            f":{puerto}" if puerto and puerto != {"https": 443, "http": 80}[partes.scheme] else ""
+        )
+        return f"{partes.scheme}://{host}{sufijo}"
     raise ErrorApi("El servidor debe usar HTTPS")
 
 
@@ -55,9 +78,16 @@ class ClienteApi:
         if http is None:
             url = url or os.environ.get("ASI_SERVIDOR_URL", "http://127.0.0.1:8000")
             # Escritura amplia: subir un ZIP de horarios por internet puede tardar.
-            tiempo = httpx.Timeout(20, write=300)
-            http = httpx.Client(base_url=validar_url(url), timeout=tiempo, transport=transporte)
+            tiempo = httpx.Timeout(120, connect=8, write=300)
+            url = validar_url(url, solo_https=getattr(sys, "frozen", False))
+            http = httpx.Client(
+                base_url=url, timeout=tiempo, transport=transporte, verify=True, trust_env=False
+            )
         self._http = http
+        origen = str(http.base_url).rstrip("/")
+        self.servicio_llavero = (
+            f"{SERVICIO_LLAVERO}:{origen}" if origen.startswith("https://") else SERVICIO_LLAVERO
+        )
         self._token: str | None = None
         self.usuario: UsuarioSesion | None = None
 
@@ -74,7 +104,7 @@ class ClienteApi:
     def restaurar_sesion(self, correo: str) -> UsuarioSesion | None:
         """Intenta reutilizar un token guardado en el llavero del sistema."""
         try:
-            self._token = keyring.get_password(SERVICIO_LLAVERO, correo)
+            self._token = keyring.get_password(self.servicio_llavero, correo)
         except KeyringError:
             return None
         if not self._token:
@@ -91,7 +121,12 @@ class ClienteApi:
         self.usuario = None
         if correo:
             with suppress(KeyringError):
-                keyring.delete_password(SERVICIO_LLAVERO, correo)
+                keyring.delete_password(self.servicio_llavero, correo)
+
+    def cerrar(self) -> None:
+        self._token = None
+        self.usuario = None
+        self._http.close()
 
     def servidor_disponible(self) -> bool:
         try:
@@ -137,14 +172,18 @@ class ClienteApi:
     def _guardar_token(self, correo: str) -> None:
         # Si el llavero no está disponible, simplemente no se recuerda la sesión.
         with suppress(KeyringError):
-            keyring.set_password(SERVICIO_LLAVERO, correo, self._token or "")
+            keyring.set_password(self.servicio_llavero, correo, self._token or "")
 
     def _peticion(self, metodo: str, ruta: str, **kwargs) -> httpx.Response:
         encabezados = {"Authorization": f"Bearer {self._token}"} if self._token else {}
         try:
-            r = self._http.request(metodo, ruta, headers=encabezados, **kwargs)
+            r = self._http.request(
+                metodo, ruta, headers=encabezados, follow_redirects=False, **kwargs
+            )
         except httpx.HTTPError as error:
             raise ErrorApi("No se pudo conectar con el servidor") from error
+        if r.is_redirect:
+            raise ErrorApi("El servidor redirigió la conexión; verifica su dirección HTTPS")
         if r.status_code >= 400:
             problemas: list[str] = []
             try:

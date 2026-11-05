@@ -1,0 +1,52 @@
+name: Instalador Windows
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      QT_QPA_PLATFORM: offscreen
+      UV_PROJECT_ENVIRONMENT: .venv-instalador
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Solo cliente y herramienta de empaquetado
+        run: uv sync --python 3.12 --package asi-cliente --no-dev --group instalador --locked
+      - name: Construir ejecutable con Python y Qt incluidos
+        run: uv run --no-sync pyinstaller --clean --noconfirm empaquetado/windows/asi.spec
+      - name: Instalar compilador de instaladores
+        run: choco install innosetup --no-progress -y
+      - name: Compilar instalador por usuario
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" empaquetado/windows/instalador.iss'
+      - name: Instalar, abrir y desinstalar con datos ficticios
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destino = Join-Path $env:RUNNER_TEMP 'asi-instalado'
+          $setup = (Get-ChildItem dist/instalador/*.exe).FullName
+          $p = Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',"/DIR=$destino") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Falló la instalación' }
+          $ejecutable = Join-Path $destino 'ASI-ARCHIVO.exe'
+          $resultado = Join-Path $env:RUNNER_TEMP 'asi-autoprueba.json'
+          $p = Start-Process $ejecutable -ArgumentList @('--autoprueba','--resultado',$resultado) -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'La aplicación no respondió' }
+          if ($p.ExitCode -ne 0) { throw 'Falló el ejecutable instalado' }
+          $datos = Get-Content $resultado -Raw | ConvertFrom-Json
+          if ($datos.estado -ne 'ok') { throw 'Autoprueba incompleta' }
+          Copy-Item $resultado dist/instalador/autoprueba-windows.json
+          $p = Start-Process (Join-Path $destino 'unins000.exe') -ArgumentList @('/VERYSILENT','/NORESTART') -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or (Test-Path $ejecutable)) { throw 'Falló la desinstalación' }
+          Get-FileHash $setup -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content dist/instalador/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ASI-ARCHIVO-Windows-x64
+          path: dist/instalador/
+          retention-days: 30
