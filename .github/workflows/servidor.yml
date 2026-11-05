@@ -1,0 +1,20 @@
+name: Servidor y recuperación
+on:
+  push:
+    branches: [entrega-v1]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  servidor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.12 --locked
+      - name: Bibliotecas del generador de PDF ficticio
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
+      - name: Servidor nuevo, HTTPS y restauración aislada (solo datos ficticios)
+        run: herramientas/ci/validar-servidor.sh

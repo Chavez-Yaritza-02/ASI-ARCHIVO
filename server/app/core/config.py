@@ -21,6 +21,7 @@ class Configuracion(BaseSettings):
     )
 
     entorno: str = "desarrollo"
+    instancia_aceptacion: bool = False
     hosts_permitidos: list[str] = []
     archivo_raiz: Path = Path.home() / ".local" / "share" / "asi-archivo" / "documentos"
     archivo_max_mb: int = Field(default=20, ge=1, le=50)

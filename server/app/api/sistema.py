@@ -13,7 +13,12 @@ router = APIRouter(prefix="/sistema", tags=["sistema"])
 
 @router.get("/identidad")
 def identidad():
-    return {"producto": "ASI-ARCHIVO", "version": VERSION, "protocolo": PROTOCOLO}
+    return {
+        "producto": "ASI-ARCHIVO",
+        "version": VERSION,
+        "protocolo": PROTOCOLO,
+        "aceptacion_ficticia": obtener_configuracion().instancia_aceptacion,
+    }
 
 
 @router.get("/estado")

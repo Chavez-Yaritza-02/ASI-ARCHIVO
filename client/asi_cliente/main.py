@@ -81,6 +81,10 @@ class Aplicacion:
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("ASI-ARCHIVO")
+    if "--comprobar-tls" in sys.argv:
+        from asi_cliente.diagnostico_tls import ejecutar
+
+        sys.exit(ejecutar())
     if "--autoprueba" in sys.argv:
         from asi_cliente.autoprueba import ejecutar
 

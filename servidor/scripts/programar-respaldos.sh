@@ -1,18 +1,19 @@
 #!/bin/bash
-# Servicio "respaldos": cada día a la hora ASI_HORA_RESPALDO crea y verifica un respaldo.
-set -uo pipefail
+set -euo pipefail
+umask 077
 hora="${ASI_HORA_RESPALDO:-02:30}"
-until pg_isready -q; do sleep 5; done
-echo "Respaldos programados diariamente a las ${hora} ($(date +%Z))"
+[[ "$hora" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || { echo 'Hora de respaldo inválida'; exit 2; }
+if [ "${ASI_RESPALDOS_HABILITADOS:-NO}" != SI ]; then
+  echo 'Respaldos automáticos deshabilitados: requieren configuración y autorización.'
+  exec sleep infinity
+fi
+echo "Respaldos cifrados diarios a las $hora"
 while true; do
-  objetivo=$(date -d "today ${hora}" +%s)
+  objetivo=$(date -d "today $hora" +%s)
   ahora=$(date +%s)
-  [ "$objetivo" -le "$ahora" ] && objetivo=$(date -d "tomorrow ${hora}" +%s)
+  [ "$objetivo" -le "$ahora" ] && objetivo=$(date -d "tomorrow $hora" +%s)
   sleep $((objetivo - ahora))
-  if /scripts/respaldar.sh && /scripts/verificar-respaldo.sh; then
-    date '+%Y-%m-%d %H:%M:%S respaldo correcto' > /respaldos/ULTIMO_RESULTADO.txt
-  else
-    date '+%Y-%m-%d %H:%M:%S RESPALDO FALLIDO: revisar con docker compose logs respaldos' \
-      > /respaldos/ULTIMO_RESULTADO.txt
+  if ! /scripts/respaldar.sh; then
+    date '+%Y-%m-%d %H:%M:%S RESPALDO FALLIDO: revisar registros' > /respaldos/ULTIMO_RESULTADO.txt
   fi
 done

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from app.api.deps import SesionDB, UsuarioActual
-from app.core.seguridad import crear_token, verificar_contrasena
+from app.core.seguridad import crear_token, sello_usuario, verificar_contrasena
 from app.models import Auditoria, Usuario
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
@@ -70,7 +70,7 @@ def login(
 
     sesion.add(Auditoria(usuario_id=usuario.id, accion="login", entidad="usuario", ip=ip))
     sesion.commit()
-    return TokenRespuesta(access_token=crear_token(usuario.id))
+    return TokenRespuesta(access_token=crear_token(usuario.id, sello_usuario(usuario)))
 
 
 @router.get("/yo", response_model=UsuarioRespuesta)

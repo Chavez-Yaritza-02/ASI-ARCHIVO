@@ -3,6 +3,7 @@ name: Instalador Windows
 on:
   push:
     branches: [entrega-v1]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -23,6 +24,7 @@ jobs:
 
 
   instalador:
+    needs: pruebas-cliente-windows
     runs-on: windows-latest
     timeout-minutes: 25
     env:
@@ -57,6 +59,7 @@ jobs:
           $datos = Get-Content $resultado -Raw | ConvertFrom-Json
           if ($datos.estado -ne 'ok') { throw 'Autoprueba incompleta' }
           Copy-Item $resultado dist/instalador/autoprueba-windows.json
+          & herramientas/ci/comprobar-tls-windows.ps1 -Ejecutable $ejecutable
           $p = Start-Process (Join-Path $destino 'unins000.exe') -ArgumentList @('/VERYSILENT','/NORESTART') -Wait -PassThru
           if ($p.ExitCode -ne 0 -or (Test-Path $ejecutable)) { throw 'Falló la desinstalación' }
           Get-FileHash $setup -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content dist/instalador/SHA256SUMS.txt

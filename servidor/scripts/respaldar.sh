@@ -1,35 +1,29 @@
 #!/bin/bash
-# Respaldo completo: base de datos (pg_dump) + documentos + manifiesto de huellas.
-# Corre dentro del contenedor "respaldos". Resultado: /respaldos/AAAAMMDD-HHMMSS/
+# Cifrado restic. No elimina respaldos anteriores ni ejecuta retención destructiva.
 set -euo pipefail
 umask 077
-marca=$(date +%Y%m%d-%H%M%S)
-parcial="/respaldos/.${marca}.parcial"
-destino="/respaldos/${marca}"
-trap 'rm -rf "$parcial"' ERR
-mkdir -p "$parcial"
-
-pg_dump --format=custom --file="$parcial/base.dump"
-tar -C /datos -czf "$parcial/documentos.tar.gz" documentos
-psql -Atc "SELECT version_num FROM alembic_version" > "$parcial/esquema.txt"
-# Conteo de registros por tabla: la verificación lo compara tras restaurar.
-psql -At -F ' ' -c "
-  SELECT format('SELECT %L, count(*) FROM %I', table_name, table_name)
-  FROM information_schema.tables
-  WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name" \
-  | psql -At -F ' ' > "$parcial/conteos.txt"
-{
-  echo "Respaldo de ASI-ARCHIVO"
-  echo "Fecha: $(date '+%Y-%m-%d %H:%M:%S %Z')"
-  echo "Esquema: $(cat "$parcial/esquema.txt")"
-  echo "Documentos: $(tar -tzf "$parcial/documentos.tar.gz" | grep -c '^documentos/.\+' || true)"
-} > "$parcial/LEEME.txt"
-(cd "$parcial" && sha256sum base.dump documentos.tar.gz esquema.txt conteos.txt LEEME.txt \
-  > MANIFIESTO.sha256)
-mv "$parcial" "$destino"
-trap - ERR
-echo "Respaldo creado: $destino"
-
-# Conservar solo los N más recientes (por defecto 30).
-conservar="${ASI_RESPALDOS_CONSERVAR:-30}"
-ls -1d /respaldos/2* 2>/dev/null | sort | head -n "-$conservar" | xargs -r rm -rf
+[ "${ASI_RESPALDOS_HABILITADOS:-NO}" = SI ] || { echo 'Respaldos no habilitados por el administrador'; exit 2; }
+export PGPASSWORD="$(cat /run/secrets/db_respaldo)"
+: "${RESTIC_REPOSITORY:?}" "${RESTIC_PASSWORD_FILE:?}"
+# Serializar las capturas, incluyendo las solicitadas manualmente.
+exec 9>/respaldos/.respaldo.lock
+flock -n 9 || { echo 'Ya hay un respaldo en ejecución'; exit 2; }
+trabajo=$(mktemp -d /trabajo/respaldo.XXXXXX)
+trap 'rm -rf -- "$trabajo"' EXIT
+if [ ! -f "$RESTIC_REPOSITORY/config" ]; then
+  [ ! -e "$RESTIC_REPOSITORY" ] || { echo 'Repositorio existente sin configuración: revisión requerida'; exit 2; }
+  restic init
+fi
+python3 /scripts/copia_consistente.py "$trabajo/lote"
+# La restauración localiza el lote por su manifiesto; el nombre de equipo fijo agrupa los respaldos.
+(cd "$trabajo" && restic backup lote --host asi-archivo --tag asi-archivo --json) > "$trabajo/resultado.jsonl"
+restic check --read-data
+python3 - "$trabajo/resultado.jsonl" > /respaldos/ULTIMO_RESULTADO.txt <<'PY'
+import json,sys
+from datetime import datetime, timezone
+filas = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+resumen = next(x for x in filas if x.get('message_type')=='summary')
+print(json.dumps({'estado':'cifrado_integridad_verificada','snapshot':resumen['snapshot_id'],
+                  'fecha_utc':datetime.now(timezone.utc).isoformat()}))
+PY
+echo 'Respaldo cifrado creado y comprobado. La restauración se prueba por separado.'

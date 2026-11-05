@@ -1,99 +1,89 @@
 #!/bin/bash
-# Herramienta de administración del servidor de ASI-ARCHIVO.
-# Se ejecuta en el servidor, dentro de la carpeta "servidor":  ./asi.sh <comando>
-#
-#   instalar                  Primera instalación: genera claves, crea la base y el administrador
-#   estado                    Muestra si los servicios están funcionando
-#   usuarios <subcomando>     Administrar usuarios (ver ./asi.sh usuarios --help)
-#   respaldar                 Crea un respaldo ahora (además del automático diario)
-#   respaldos                 Lista los respaldos y el resultado del último automático
-#   verificar [respaldo]      Comprueba un respaldo restaurándolo en una base temporal
-#   restaurar <respaldo>      Reemplaza los datos actuales por los de un respaldo
-#   certificado               Copia el certificado raíz (modo ASI_TLS=internal) para las PCs
-#   actualizar                Respaldo + nueva versión + migraciones (tras revisar el cambio)
-#   registros                 Muestra los últimos mensajes de los servicios
+# Administración explícita. Ninguna operación restaura encima de la base operativa.
 set -euo pipefail
 cd "$(dirname "$0")"
 DC=(docker compose)
-
 confirmar() {
   read -r -p "$1 Escribe $2 para continuar: " respuesta
-  [ "$respuesta" = "$2" ] || { echo "Cancelado."; exit 1; }
+  [ "$respuesta" = "$2" ] || { echo 'Cancelado.'; exit 2; }
 }
-
+verificar() {
+  # Cada verificación usa una base aislada NUEVA (en memoria) y la elimina al terminar.
+  "${DC[@]}" --profile verificacion rm -sf db-verificacion >/dev/null 2>&1 || true
+  "${DC[@]}" --profile verificacion up -d --wait db-verificacion
+  # -T y </dev/null: el contenedor no debe consumir la entrada (p. ej. la confirmación).
+  if "${DC[@]}" --profile verificacion run --rm -T verificacion "$1" </dev/null; then estado=0; else estado=$?; fi
+  "${DC[@]}" --profile verificacion rm -sf db-verificacion >/dev/null 2>&1 || true
+  return "$estado"
+}
 case "${1:-ayuda}" in
+  preparar)
+    read -r -p 'Dominio oficial del servidor (sin https://): ' dominio
+    read -r -p 'TLS: correo del responsable para internet o internal para laboratorio/VPN: ' tls
+    python3 preparar.py --dominio "$dominio" --tls "$tls"
+    ;;
   instalar)
-    command -v docker >/dev/null || { echo "Instala Docker Engine primero (ver manual)."; exit 1; }
-    if [ -f .env ]; then
-      echo "Ya existe servidor/.env: el sistema ya fue instalado. No se modifica."; exit 1
-    fi
-    read -r -p "Nombre o IP del servidor para las PCs (p. ej. 192.168.10.25): " dominio
-    read -r -p "Certificado: 'internal' (red interna) o un correo (dominio público): " tls
-    umask 077
-    sed -e "s#^ASI_DOMINIO=.*#ASI_DOMINIO=${dominio}#" -e "s#^ASI_TLS=.*#ASI_TLS=${tls:-internal}#" \
-        -e "s#^ASI_DB_CONTRASENA=.*#ASI_DB_CONTRASENA=$(openssl rand -hex 24)#" \
-        -e "s#^ASI_SECRET_KEY=.*#ASI_SECRET_KEY=$(openssl rand -base64 48 | tr -d '\n/+=')#" \
-        .env.ejemplo > .env
-    echo "Construyendo e iniciando servicios (la primera vez tarda varios minutos)..."
-    "${DC[@]}" up -d --build
-    echo "Creando las tablas de la base de datos (instalación nueva)..."
-    until "${DC[@]}" exec -T api python -c "import app" 2>/dev/null; do sleep 3; done
-    "${DC[@]}" exec -T api alembic upgrade head
-    echo; echo "Crea la cuenta del administrador:"
-    read -r -p "Correo: " correo; read -r -p "Nombre: " nombre
-    "${DC[@]}" exec api python -m app.cli crear-usuario --correo "$correo" --nombre "$nombre" \
-      --rol administrador
-    echo; echo "Listo. Dirección para las PCs: https://${dominio}"
-    [ "${tls:-internal}" = "internal" ] && echo "Ejecuta ./asi.sh certificado y sigue el manual."
+    [ -f .env ] && [ -d .secretos ] || { echo 'Primero ejecuta ./asi.sh preparar'; exit 2; }
+    # Si el proyecto tiene cualquier volumen existente, se rehúsa tratarlo como nuevo.
+    proyecto="${ASI_PROYECTO:-asi-archivo}"
+    [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$proyecto")" ] \
+      || { echo 'Existen volúmenes de este proyecto. Instalación nueva bloqueada; no se modifican.'; exit 2; }
+    confirmar 'Esto creará infraestructura NUEVA y aplicará migraciones. Requiere autorización de TI.' INSTALAR_NUEVO
+    "${DC[@]}" build api respaldos
+    "${DC[@]}" up -d --wait db
+    "${DC[@]}" --profile mantenimiento run --rm migracion
+    "${DC[@]}" exec -T db psql -U asi_admin -d asi_archivo -v ON_ERROR_STOP=1 < db/permisos.sql
+    "${DC[@]}" up -d
+    echo 'Esquema instalado. Crea usuarios con ./asi.sh usuarios crear-usuario ...'
     ;;
   estado)
     "${DC[@]}" ps
-    echo; cat respaldos/ULTIMO_RESULTADO.txt 2>/dev/null || echo "Aún no hay respaldo automático."
+    cat respaldos/ULTIMO_RESULTADO.txt 2>/dev/null || echo 'Aún no existe un respaldo verificado.'
     ;;
   usuarios)
-    shift; "${DC[@]}" exec api python -m app.cli "$@"
+    # entrada.py carga las contraseñas desde los secretos (exec no usa el ENTRYPOINT).
+    shift; "${DC[@]}" exec api python /opt/asi/entrada.py python -m app.cli "$@"
     ;;
   respaldar)
     "${DC[@]}" exec -T respaldos /scripts/respaldar.sh
-    "${DC[@]}" exec -T respaldos /scripts/verificar-respaldo.sh
     ;;
   respaldos)
-    ls -1 respaldos | grep -E '^[0-9]{8}-[0-9]{6}$' || echo "No hay respaldos."
-    echo; cat respaldos/ULTIMO_RESULTADO.txt 2>/dev/null || true
+    "${DC[@]}" exec -T respaldos restic snapshots --tag asi-archivo
     ;;
   verificar)
-    "${DC[@]}" exec -T respaldos /scripts/verificar-respaldo.sh "${2:-}"
+    verificar "${2:-latest}"
     ;;
   restaurar)
-    respaldo="${2:?Indica el respaldo, p. ej. ./asi.sh restaurar 20261104-023000}"
-    [ -d "respaldos/$respaldo" ] || { echo "No existe respaldos/$respaldo"; exit 1; }
-    echo "ATENCIÓN: se reemplazarán TODOS los datos actuales por los del respaldo $respaldo."
-    confirmar "Antes se hará un respaldo de seguridad del estado actual." "RESTAURAR"
-    "${DC[@]}" exec -T respaldos /scripts/respaldar.sh
-    "${DC[@]}" stop api
-    "${DC[@]}" --profile restauracion run --rm restauracion "$respaldo"
-    "${DC[@]}" start api
-    echo "Restauración terminada. Comprueba con ./asi.sh estado y entrando a la aplicación."
+    respaldo="${2:?Indica el respaldo: ./asi.sh restaurar <id> (ver ./asi.sh respaldos)}"
+    [[ "$respaldo" =~ ^[a-f0-9]{8,64}$ ]] || { echo 'Identificador de respaldo inválido'; exit 2; }
+    echo "1/4 Verificando el respaldo ${respaldo} en una base aislada..."
+    verificar "$respaldo"
+    echo 'ATENCIÓN: se reemplazarán TODOS los datos y documentos actuales por los del respaldo.'
+    confirmar 'Antes se creará un respaldo cifrado del estado actual.' RESTAURAR
+    echo '2/4 Respaldo de seguridad del estado actual...'
+    "${DC[@]}" exec -T respaldos /scripts/respaldar.sh </dev/null
+    echo '3/4 Restaurando (la aplicación se detiene unos minutos)...'
+    "${DC[@]}" stop api respaldos
+    "${DC[@]}" --profile restauracion run --rm -T restauracion "$respaldo" </dev/null
+    echo '4/4 Iniciando servicios...'
+    "${DC[@]}" up -d --wait api respaldos
+    echo 'Restauración terminada. Comprueba con ./asi.sh estado y entrando a la aplicación.'
+    ;;
+  actualizar)
+    echo 'Pasos para actualizar (manual): docs/MANUAL_ADMINISTRADOR.md, sección Actualizar.' >&2
+    exit 2
     ;;
   certificado)
     mkdir -p certificado
+    [ ! -e certificado/ASI-ARCHIVO-raiz.crt ] || { echo 'Ya existe una copia: no se sobrescribe'; exit 2; }
     "${DC[@]}" cp https:/data/caddy/pki/authorities/local/root.crt certificado/ASI-ARCHIVO-raiz.crt
-    echo "Certificado: servidor/certificado/ASI-ARCHIVO-raiz.crt"
-    echo "Instálalo en cada PC (ver MANUAL_ADMINISTRADOR, sección Certificado)."
-    ;;
-  actualizar)
-    confirmar "Se hará un respaldo y se aplicarán cambios de versión y de esquema." "ACTUALIZAR"
-    "${DC[@]}" exec -T respaldos /scripts/respaldar.sh
-    "${DC[@]}" exec -T respaldos /scripts/verificar-respaldo.sh
-    "${DC[@]}" up -d --build
-    until "${DC[@]}" exec -T api python -c "import app" 2>/dev/null; do sleep 3; done
-    "${DC[@]}" exec -T api alembic upgrade head
-    echo "Actualización terminada."
+    echo 'Certificado copiado. Verifica su huella con TI antes de confiar en él.'
     ;;
   registros)
-    "${DC[@]}" logs --tail 100 "${2:-}"
+    if [ -n "${2:-}" ]; then "${DC[@]}" logs --tail 100 "$2"; else "${DC[@]}" logs --tail 100; fi
     ;;
   *)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    echo 'Uso: ./asi.sh preparar|instalar|estado|usuarios|respaldar|respaldos|verificar|restaurar|certificado|registros'
+    echo 'No se inician migraciones ni restauraciones con estado, verificar o preparar.'
     ;;
 esac

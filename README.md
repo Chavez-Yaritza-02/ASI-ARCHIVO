@@ -3,9 +3,24 @@
 Sistema de Asistencia y Archivo Digital — Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-La arquitectura, el modelo de datos y las etapas están en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
+## Entrega 1.0 (rama `entrega-v1`)
 
-## Requisitos
+| Para | Documento |
+|---|---|
+| Personal de Jefatura (uso diario) | [docs/MANUAL_USUARIO.md](docs/MANUAL_USUARIO.md) — también incluido en el instalador |
+| Área de TI y administrador (servidor, usuarios, respaldos, recuperación) | [docs/MANUAL_ADMINISTRADOR.md](docs/MANUAL_ADMINISTRADOR.md) |
+
+- **Instalador de Windows:** GitHub → Actions → *Instalador Windows* → artefacto
+  `ASI-ARCHIVO-Windows-x64`. No requiere Python, PostgreSQL ni Tesseract en las PCs.
+- **Servidor central:** carpeta [servidor/](servidor/) (Docker Compose: base de datos, API con
+  OCR, antivirus, HTTPS y respaldos diarios verificados). Se instala con `./asi.sh instalar`.
+- **Prueba de aceptación** contra un servidor de prueba:
+  [herramientas/aceptacion_servidor.py](herramientas/aceptacion_servidor.py).
+
+La arquitectura, el modelo de datos y las etapas están en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
+La sección siguiente es para **desarrollo** (no para instalar en la Jefatura).
+
+## Requisitos (desarrollo)
 
 - [uv](https://docs.astral.sh/uv/) (administra Python 3.12 y las dependencias)
 - PostgreSQL 17

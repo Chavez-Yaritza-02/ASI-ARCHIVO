@@ -1,9 +1,21 @@
-# ASI-ARCHIVO: servidor central (una computadora o servidor que permanezca encendido).
-#
-# Servicios: base de datos, API, antivirus, HTTPS y respaldos diarios. Solo el puerto
-# 443 (y 80, para redirigir a HTTPS) queda expuesto; la base de datos y la API no.
-# Toda la configuración está en servidor/.env (ver .env.ejemplo y MANUAL_ADMINISTRADOR).
-name: asi-archivo
+# Servidor central. No inicia migraciones ni restaura datos automáticamente.
+name: ${ASI_PROYECTO:-asi-archivo}
+
+x-api-entorno: &api-entorno
+  ASI_ENTORNO: produccion
+  ASI_DB_HOST: db
+  ASI_DB_NOMBRE: asi_archivo
+  ASI_DB_USUARIO: asi_app
+  ASI_HOSTS_PERMITIDOS: '["${ASI_DOMINIO:?Define ASI_DOMINIO}"]'
+  ASI_ARCHIVO_RAIZ: /datos/documentos
+  ASI_ARCHIVO_ANTIVIRUS_CMD: /usr/local/bin/asi-antivirus
+  # Solo "true" en servidores de prueba con datos ficticios (habilita la prueba de aceptación).
+  ASI_INSTANCIA_ACEPTACION: ${ASI_INSTANCIA_ACEPTACION:-false}
+  ASI_ARCHIVO_REQUERIR_ANTIVIRUS: "true"
+  ASI_ARCHIVO_MAX_MB: ${ASI_ARCHIVO_MAX_MB:-20}
+  ASI_TOKEN_MINUTOS: ${ASI_TOKEN_MINUTOS:-480}
+  ASI_ZONA_HORARIA: ${ASI_ZONA_HORARIA:-America/Mexico_City}
+  ASI_OCR_PROCESOS: ${ASI_OCR_PROCESOS:-2}
 
 services:
   db:
@@ -11,27 +23,32 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: asi_archivo
-      POSTGRES_USER: asi_archivo
-      POSTGRES_PASSWORD: ${ASI_DB_CONTRASENA:?Define ASI_DB_CONTRASENA en servidor/.env}
+      POSTGRES_USER: asi_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin
+    secrets: [db_admin, db_app, db_respaldo]
     volumes:
       - basedatos:/var/lib/postgresql/data
+      - ./db/inicializar.sh:/docker-entrypoint-initdb.d/asi.sh:ro
+    networks: [datos]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U asi_archivo -d asi_archivo"]
-      interval: 10s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U asi_admin -d asi_archivo"]
+      interval: 5s
+      retries: 30
 
   clamav:
-    # Antivirus para los documentos que se suben. Descarga firmas actualizadas de
-    # ClamAV (solo descarga; no envía archivos ni datos a ningún servicio).
-    image: clamav/clamav:stable
+    # Imagen propia con los paquetes oficiales de ClamAV (Debian): funciona en servidores
+    # Intel/AMD y ARM. Solo descarga firmas; no envía archivos a ningún servicio.
+    build: ./antivirus
+    image: asi-archivo-antivirus:${ASI_VERSION:-1.0.0}
     restart: unless-stopped
     volumes:
       - firmas_antivirus:/var/lib/clamav
+    networks: [antivirus]
     healthcheck:
-      test: ["CMD", "clamdcheck.sh"]
-      interval: 60s
-      start_period: 300s
-      retries: 5
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/3310 && printf 'zPING\\0' >&3 && read -r -t 5 -d '' r <&3 && [ \"$$r\" = PONG ]"]
+      interval: 15s
+      start_period: 600s
+      retries: 30
 
   api:
     build:
@@ -40,33 +57,38 @@ services:
     image: asi-archivo-api:${ASI_VERSION:-1.0.0}
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      ASI_ENTORNO: produccion
-      ASI_DATABASE_URL: postgresql+psycopg://asi_archivo:${ASI_DB_CONTRASENA}@db:5432/asi_archivo
-      ASI_SECRET_KEY: ${ASI_SECRET_KEY:?Define ASI_SECRET_KEY en servidor/.env}
-      ASI_HOSTS_PERMITIDOS: '["${ASI_DOMINIO:?Define ASI_DOMINIO en servidor/.env}"]'
-      ASI_ARCHIVO_RAIZ: /datos/documentos
-      ASI_ARCHIVO_ANTIVIRUS_CMD: /usr/local/bin/asi-antivirus
-      ASI_ARCHIVO_REQUERIR_ANTIVIRUS: "true"
-      ASI_ARCHIVO_MAX_MB: ${ASI_ARCHIVO_MAX_MB:-20}
-      ASI_TOKEN_MINUTOS: ${ASI_TOKEN_MINUTOS:-480}
-      ASI_ZONA_HORARIA: ${ASI_ZONA_HORARIA:-America/Mexico_City}
-      ASI_OCR_PROCESOS: ${ASI_OCR_PROCESOS:-2}
-      TZ: ${ASI_ZONA_HORARIA:-America/Mexico_City}
+      db: {condition: service_healthy}
+    environment: *api-entorno
+    secrets: [db_app, api_jwt]
     volumes:
       - documentos:/datos/documentos
+    networks: [frontal, datos, antivirus]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json,os; r=urllib.request.Request('http://127.0.0.1:8000/salud',headers={'Host':json.loads(os.environ['ASI_HOSTS_PERMITIDOS'])[0]}); urllib.request.urlopen(r,timeout=3)"]
+      interval: 15s
+      retries: 10
+
+  migracion:
+    image: asi-archivo-api:${ASI_VERSION:-1.0.0}
+    profiles: [mantenimiento]
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      <<: *api-entorno
+      ASI_DB_USUARIO: asi_admin
+    secrets: [db_admin, api_jwt]
+    networks: [datos]
+    command: ["alembic", "upgrade", "head"]
 
   https:
-    # Certificado automático. Con un dominio público, Let's Encrypt; en una red interna,
-    # una autoridad propia (ASI_TLS=internal) cuyo certificado raíz se instala en las PCs.
     image: caddy:2
     restart: unless-stopped
     depends_on: [api]
     ports:
-      - "${ASI_PUERTO_HTTPS:-443}:443"
-      - "${ASI_PUERTO_HTTP:-80}:80"
+      - "${ASI_ESCUCHAR:-0.0.0.0}:${ASI_PUERTO_HTTPS:-443}:443"
+      - "${ASI_ESCUCHAR:-0.0.0.0}:${ASI_PUERTO_HTTP:-80}:80"
     environment:
       ASI_DOMINIO: ${ASI_DOMINIO}
       ASI_TLS: ${ASI_TLS:-internal}
@@ -74,45 +96,100 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - certificados:/data
       - config_https:/config
+    networks: [frontal]
 
   respaldos:
-    # Respaldo diario de la base de datos y los documentos, con verificación.
-    image: postgres:17-bookworm
+    build:
+      context: ..
+      dockerfile: servidor/Respaldo.Dockerfile
+    image: asi-archivo-respaldo:${ASI_VERSION:-1.0.0}
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      db: {condition: service_healthy}
     entrypoint: ["/bin/bash", "/scripts/programar-respaldos.sh"]
     environment:
       PGHOST: db
-      PGUSER: asi_archivo
+      PGUSER: asi_respaldo
       PGDATABASE: asi_archivo
-      PGPASSWORD: ${ASI_DB_CONTRASENA}
+      ASI_RESPALDOS_HABILITADOS: ${ASI_RESPALDOS_HABILITADOS:-NO}
       ASI_HORA_RESPALDO: ${ASI_HORA_RESPALDO:-02:30}
-      ASI_RESPALDOS_CONSERVAR: ${ASI_RESPALDOS_CONSERVAR:-30}
+      RESTIC_REPOSITORY: /respaldos/cifrado
+      RESTIC_PASSWORD_FILE: /run/secrets/backup_password
       TZ: ${ASI_ZONA_HORARIA:-America/Mexico_City}
+    secrets: [db_respaldo, backup_password]
     volumes:
       - ./scripts:/scripts:ro
       - documentos:/datos/documentos:ro
       - ./respaldos:/respaldos
+    networks: [datos]
 
   restauracion:
-    # Solo se usa al restaurar un respaldo (./asi.sh restaurar). No corre normalmente.
-    image: postgres:17-bookworm
-    profiles: ["restauracion"]
+    # Solo la usa "./asi.sh restaurar" (después de verificar y de respaldar el estado actual).
+    image: asi-archivo-respaldo:${ASI_VERSION:-1.0.0}
+    profiles: [restauracion]
     depends_on:
-      db:
-        condition: service_healthy
+      db: {condition: service_healthy}
     entrypoint: ["/bin/bash", "/scripts/restaurar-interno.sh"]
     environment:
       PGHOST: db
-      PGUSER: asi_archivo
+      PGUSER: asi_admin
       PGDATABASE: asi_archivo
-      PGPASSWORD: ${ASI_DB_CONTRASENA}
+      RESTIC_REPOSITORY: /respaldos/cifrado
+      RESTIC_PASSWORD_FILE: /run/secrets/backup_password
+    secrets: [db_admin, backup_password]
     volumes:
       - ./scripts:/scripts:ro
+      - ./db:/db:ro
       - documentos:/datos/documentos
       - ./respaldos:/respaldos:ro
+    networks: [datos]
+
+  db-verificacion:
+    image: postgres:17-bookworm
+    profiles: [verificacion]
+    environment:
+      POSTGRES_DB: asi_archivo_verificacion
+      POSTGRES_USER: verificador
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_verificacion
+    secrets: [db_verificacion]
+    tmpfs: [/var/lib/postgresql/data]
+    networks: [verificacion]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verificador -d asi_archivo_verificacion"]
+      interval: 5s
+      retries: 30
+
+  verificacion:
+    image: asi-archivo-respaldo:${ASI_VERSION:-1.0.0}
+    profiles: [verificacion]
+    depends_on:
+      db-verificacion: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "/scripts/verificar-respaldo.sh"]
+    environment:
+      PGHOST: db-verificacion
+      PGUSER: verificador
+      PGDATABASE: asi_archivo_verificacion
+      RESTIC_REPOSITORY: /respaldos/cifrado
+      RESTIC_PASSWORD_FILE: /run/secrets/backup_password
+    secrets: [db_verificacion, backup_password]
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./respaldos:/respaldos:ro
+    networks: [verificacion]
+
+secrets:
+  db_admin: {file: ./.secretos/db_admin}
+  db_app: {file: ./.secretos/db_app}
+  db_respaldo: {file: ./.secretos/db_respaldo}
+  db_verificacion: {file: ./.secretos/db_verificacion}
+  api_jwt: {file: ./.secretos/api_jwt}
+  backup_password: {file: ./.secretos/backup_password}
+
+networks:
+  frontal:
+  datos: {internal: true}
+  antivirus:
+  verificacion: {internal: true}
 
 volumes:
   basedatos:

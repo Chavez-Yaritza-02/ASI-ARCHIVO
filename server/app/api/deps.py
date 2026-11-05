@@ -7,7 +7,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from app.core.seguridad import leer_token
+from app.core.seguridad import leer_token, sesion_vigente
 from app.db.sesion import obtener_sesion
 from app.models import Usuario
 
@@ -19,7 +19,7 @@ SesionDB = Annotated[Session, Depends(obtener_sesion)]
 def usuario_actual(sesion: SesionDB, token: Annotated[str, Depends(_oauth2)]) -> Usuario:
     usuario_id = leer_token(token)
     usuario = sesion.get(Usuario, usuario_id) if usuario_id is not None else None
-    if usuario is None or not usuario.activo:
+    if usuario is None or not usuario.activo or not sesion_vigente(token, usuario):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sesión inválida o expirada",

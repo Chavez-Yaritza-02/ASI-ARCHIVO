@@ -1,5 +1,7 @@
 """Contraseñas (Argon2) y tokens de sesión (JWT)."""
 
+import hashlib
+import hmac
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -23,15 +25,33 @@ def verificar_contrasena(contrasena: str, hash_guardado: str) -> bool:
         return False
 
 
-def crear_token(usuario_id: int) -> str:
+def sello_usuario(usuario) -> str:
+    material = f"{usuario.hash_contrasena}:{usuario.actualizado_en.astimezone(UTC).isoformat()}"
+    return hmac.new(
+        obtener_configuracion().secret_key.encode(), material.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def crear_token(usuario_id: int, sello: str | None = None) -> str:
     config = obtener_configuracion()
     ahora = datetime.now(UTC)
     datos = {
         "sub": str(usuario_id),
         "iat": ahora,
         "exp": ahora + timedelta(minutes=config.token_minutos),
+        "sesion": sello,
     }
     return jwt.encode(datos, config.secret_key, algorithm=_ALGORITMO)
+
+
+def sesion_vigente(token: str, usuario) -> bool:
+    try:
+        datos = jwt.decode(token, obtener_configuracion().secret_key, algorithms=[_ALGORITMO])
+        return isinstance(datos.get("sesion"), str) and hmac.compare_digest(
+            datos["sesion"], sello_usuario(usuario)
+        )
+    except jwt.PyJWTError:
+        return False
 
 
 def leer_token(token: str) -> int | None:

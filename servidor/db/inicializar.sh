@@ -1,0 +1,20 @@
+#!/bin/bash
+# Solo en un volumen PostgreSQL NUEVO. No modifica bases ya inicializadas.
+set -euo pipefail
+export CLAVE_APP="$(cat /run/secrets/db_app)"
+export CLAVE_RESPALDO="$(cat /run/secrets/db_respaldo)"
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
+\getenv clave_app CLAVE_APP
+\getenv clave_respaldo CLAVE_RESPALDO
+CREATE ROLE asi_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'clave_app';
+CREATE ROLE asi_respaldo LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'clave_respaldo';
+REVOKE ALL ON DATABASE asi_archivo FROM PUBLIC;
+GRANT CONNECT ON DATABASE asi_archivo TO asi_app, asi_respaldo;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO asi_app, asi_respaldo;
+ALTER DEFAULT PRIVILEGES FOR ROLE asi_admin IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO asi_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE asi_admin IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO asi_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE asi_admin IN SCHEMA public GRANT SELECT ON TABLES TO asi_respaldo;
+ALTER DEFAULT PRIVILEGES FOR ROLE asi_admin IN SCHEMA public GRANT SELECT ON SEQUENCES TO asi_respaldo;
+SQL
+unset CLAVE_APP CLAVE_RESPALDO

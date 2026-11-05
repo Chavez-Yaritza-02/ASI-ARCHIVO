@@ -1,5 +1,6 @@
 # Configuración con contraseñas y respaldos: nunca al repositorio.
 .env
+.secretos/
 respaldos/*
 !respaldos/.gitkeep
 certificado/
