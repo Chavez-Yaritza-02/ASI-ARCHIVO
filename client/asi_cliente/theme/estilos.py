@@ -15,6 +15,7 @@ PALETAS = {
         "lateral_texto": "#d5deeb",
         "lateral_activo": "#244575",
         "lateral_suave": "#9fb0c9",
+        "menu_seleccion": "#264d8c",
         "texto": "#17202e",
         "texto_suave": "#526072",
         "borde": "#d3dae4",
@@ -37,6 +38,7 @@ PALETAS = {
         "lateral_texto": "#c5d0de",
         "lateral_activo": "#22324a",
         "lateral_suave": "#8796ab",
+        "menu_seleccion": "#2b4f8f",
         "texto": "#e6eaf0",
         "texto_suave": "#a3aebd",
         "borde": "#323b48",
@@ -107,7 +109,7 @@ QListWidget#menu {
 }
 QListWidget#menu::item { padding: 11px 12px; border-radius: 8px; margin: 2px 10px; }
 QListWidget#menu::item:hover { background: $lateral_activo; }
-QListWidget#menu::item:selected { background: $acento_hover; color: #ffffff; font-weight: 600; }
+QListWidget#menu::item:selected { background: $menu_seleccion; color: #ffffff; font-weight: 600; }
 QListWidget#menu:focus { border: none; }
 QWidget#lateral QPushButton {
     background: transparent; color: $lateral_texto; border: 1px solid $lateral_activo;
@@ -152,7 +154,14 @@ QComboBox QAbstractItemView {
     background: $superficie; border: 1px solid $borde;
     selection-background-color: $acento; selection-color: $acento_texto;
 }
-QCheckBox::indicator, QRadioButton::indicator { width: 16px; height: 16px; }
+QCheckBox, QRadioButton { background: transparent; spacing: 8px; }
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 9px; border: 2px solid $texto_suave;
+    background: $superficie;
+}
+QRadioButton::indicator:hover { border-color: $acento; }
+QRadioButton::indicator:checked { border: 5px solid $acento; width: 8px; height: 8px; }
+QRadioButton:focus, QCheckBox:focus { color: $acento; }
 
 /* --- Tablas --- */
 QTableWidget, QTableView, QListWidget {

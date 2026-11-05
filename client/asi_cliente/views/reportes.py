@@ -11,7 +11,7 @@ bitácora y horarios por grupo (no calcula nada por su cuenta):
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QUrl
+from PySide6.QtCore import QDate, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -92,6 +92,7 @@ class VistaReportes(QWidget):
             ayuda = QLabel(explicacion, objectName="ayuda", wordWrap=True)
             ayuda.setContentsMargins(26, 0, 0, 6)
             capa_tipo.addWidget(ayuda)
+        capa_tipo.addStretch()
         self.opciones["asistencia_dia"].setChecked(True)
 
         # --- 2. datos del reporte ---
@@ -109,6 +110,8 @@ class VistaReportes(QWidget):
             control.setAccessibleName(nombre)
         self.formulario = QFormLayout()
         self.formulario.setVerticalSpacing(10)
+        self.formulario.setLabelAlignment(Qt.AlignLeft)
+        self.formulario.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.formulario.addRow("Fecha", self.fecha)
         self.formulario.addRow("Desde", self.desde)
         self.formulario.addRow("Hasta", self.hasta)

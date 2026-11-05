@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from asi_cliente.api.cliente import ErrorApi
-from asi_cliente.views.comunes import Columna, Tabla, encabezado, mostrar_error
+from asi_cliente.views.comunes import Columna, Desplegable, Tabla, encabezado, mostrar_error
 
 DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
 
@@ -96,7 +96,7 @@ class VistaBuscador(QWidget):
             self.turno.addItem(nombre, valor)
         self.dia.setEnabled(usuario.puede("horarios.ver"))
         self.turno.setEnabled(usuario.puede("horarios.ver"))
-        self.boton_buscar = QPushButton("Buscar")
+        self.boton_buscar = QPushButton("Buscar", objectName="primario")
         self.boton_anterior = QPushButton("Anterior")
         self.boton_siguiente = QPushButton("Siguiente")
         self.resumen = QLabel("", wordWrap=True)
@@ -105,16 +105,30 @@ class VistaBuscador(QWidget):
                 Columna("Tipo", lambda f: f["tipo"]),
                 Columna("Resultado", lambda f: f["nombre"]),
                 Columna("Estado", lambda f: "Activo" if f["activo"] else "Inactivo"),
-            ]
+            ],
+            "Escribe un nombre de docente, materia, grupo o aula y pulsa «Buscar».",
         )
-        self.tabla = Tabla([Columna("Día", lambda b: DIAS[b["dia"]]), *columnas_bloques()[1:]])
+        self.tabla = Tabla(
+            [Columna("Día", lambda b: DIAS[b["dia"]]), *columnas_bloques()[1:]],
+            "Sin actividades programadas que coincidan con la búsqueda.",
+        )
         capa = QVBoxLayout(self)
         capa.addWidget(encabezado("Buscador", "Consulta catálogos y actividades programadas."))
-        capa.addWidget(self.filtros)
         fila = QHBoxLayout()
-        for w in (self.texto, self.dia, self.turno, self.boton_buscar):
-            fila.addWidget(w)
+        fila.addWidget(self.texto, 1)
+        fila.addWidget(self.boton_buscar)
         capa.addLayout(fila)
+        avanzados = QWidget()
+        capa_avanzados = QVBoxLayout(avanzados)
+        capa_avanzados.setContentsMargins(0, 0, 0, 0)
+        capa_avanzados.addWidget(self.filtros)
+        fila_dia = QHBoxLayout()
+        for w in (QLabel("Día"), self.dia, QLabel("Turno"), self.turno):
+            fila_dia.addWidget(w)
+        fila_dia.addStretch()
+        capa_avanzados.addLayout(fila_dia)
+        self.filtros_avanzados = Desplegable("Filtros avanzados", avanzados)
+        capa.addWidget(self.filtros_avanzados)
         capa.addWidget(self.resumen)
         capa.addWidget(self.entidades, 1)
         capa.addWidget(QLabel("Actividades según la versión vigente en la fecha seleccionada"))
@@ -181,7 +195,7 @@ class VistaGrupos(QWidget):
         self.letra.setPlaceholderText("Todas las letras")
         self.grupo = QComboBox()
         self.boton_filtrar = QPushButton("Buscar grupos")
-        self.boton_consultar = QPushButton("Consultar semana")
+        self.boton_consultar = QPushButton("Consultar semana", objectName="primario")
         self.resumen = QLabel("", wordWrap=True)
         self.tabla = Tabla(
             [
@@ -190,7 +204,8 @@ class VistaGrupos(QWidget):
                     "Avisos",
                     lambda b: ("TRASLAPE · " if b["conflictos"] else "") + b["aviso_calendario"],
                 ),
-            ]
+            ],
+            "Elige un grupo y pulsa «Consultar semana» para ver sus clases.",
         )
         self.boton_pdf = QPushButton("Exportar PDF")
         self.boton_excel = QPushButton("Exportar Excel")
@@ -200,7 +215,8 @@ class VistaGrupos(QWidget):
         capa.addWidget(
             encabezado("Horarios por grupo", "Una fila por clase de la semana consultada.")
         )
-        capa.addWidget(self.filtros)
+        self.filtros_avanzados = Desplegable("Semana y filtros", self.filtros)
+        capa.addWidget(self.filtros_avanzados)
         fila = QHBoxLayout()
         for w in (
             QLabel("Letra"),

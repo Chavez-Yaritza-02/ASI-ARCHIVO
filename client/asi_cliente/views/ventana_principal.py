@@ -286,6 +286,8 @@ class VentanaPrincipal(QMainWindow):
         self.menu = QListWidget(objectName="menu")
         self.menu.setIconSize(QSize(22, 22))
         self.menu.setAccessibleName("Menú principal")
+        self.menu.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.menu.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.paginas = QStackedWidget()
         for i, (titulo, nombre_icono, descripcion, _p) in enumerate(self.grupos):
             item = QListWidgetItem(icono(nombre_icono, "#d5deeb"), titulo)

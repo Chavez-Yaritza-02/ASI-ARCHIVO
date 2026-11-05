@@ -30,6 +30,7 @@ from asi_cliente.views.bitacora import DialogoHistorial
 from asi_cliente.views.comunes import (
     Campo,
     Columna,
+    Desplegable,
     DialogoFormulario,
     Tabla,
     encabezado,
@@ -102,7 +103,7 @@ class VistaDocumentos(QWidget):
         self.solo_vinculados = QCheckBox("Solo vinculados a esta hora")
         self.solo_vinculados.setVisible(asistencia is not None)
         self.solo_vinculados.setChecked(asistencia is not None)
-        self.boton_buscar = QPushButton("Buscar documentos")
+        self.boton_buscar = QPushButton("Buscar documentos", objectName="primario")
         self.boton_anterior = QPushButton("Anterior")
         self.boton_siguiente = QPushButton("Siguiente")
         self.estado = QLabel("", wordWrap=True)
@@ -115,7 +116,8 @@ class VistaDocumentos(QWidget):
                 Columna("Fecha", lambda d: d["fecha"]),
                 Columna("Versión", lambda d: d["version_actual"]["numero"]),
                 Columna("Estado", lambda d: "Activo" if d["activo"] else "Archivado"),
-            ]
+            ],
+            "No se encontraron documentos. Cambia los filtros o carga un documento nuevo.",
         )
         self.versiones = QComboBox()
         self.pagina = QSpinBox()
@@ -172,22 +174,37 @@ class VistaDocumentos(QWidget):
             contexto.setTextFormat(Qt.PlainText)
             capa.addWidget(contexto)
         filtros = QHBoxLayout()
-        for w in (self.texto, self.docente, self.periodo, self.categoria, self.boton_buscar):
+        for w in (self.texto, self.docente, self.boton_buscar):
             filtros.addWidget(w)
         capa.addLayout(filtros)
-        fechas = QHBoxLayout()
+        avanzados = QWidget()
+        capa_avanzados = QVBoxLayout(avanzados)
+        capa_avanzados.setContentsMargins(0, 0, 0, 0)
+        fila_a = QHBoxLayout()
+        for w in (QLabel("Periodo"), self.periodo, QLabel("Categoría"), self.categoria):
+            fila_a.addWidget(w)
+        fila_a.addStretch()
+        fila_b = QHBoxLayout()
         for w in (
             self.filtrar_fechas,
             self.desde,
             self.hasta,
             self.archivados,
             self.solo_vinculados,
-            self.boton_anterior,
-            self.boton_siguiente,
         ):
-            fechas.addWidget(w)
-        capa.addLayout(fechas)
-        capa.addWidget(self.estado)
+            fila_b.addWidget(w)
+        fila_b.addStretch()
+        capa_avanzados.addLayout(fila_a)
+        capa_avanzados.addLayout(fila_b)
+        self.filtros_avanzados = Desplegable(
+            "Filtros avanzados", avanzados, abierto=asistencia is not None
+        )
+        capa.addWidget(self.filtros_avanzados)
+        paginas = QHBoxLayout()
+        paginas.addWidget(self.estado, 1)
+        paginas.addWidget(self.boton_anterior)
+        paginas.addWidget(self.boton_siguiente)
+        capa.addLayout(paginas)
         capa.addWidget(divisor, 1)
         acciones = QHBoxLayout()
         for b in (

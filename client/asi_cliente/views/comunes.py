@@ -160,6 +160,8 @@ class Tabla(QTableWidget):
         self.vacio.setWordWrap(True)
         self.vacio.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._texto_filtro = ""
+        # Si la pantalla no define anchos propios, las columnas se ajustan al contenido.
+        self.ajuste_automatico = True
         modelo = self.model()
         for senal in (modelo.rowsInserted, modelo.rowsRemoved, modelo.modelReset):
             senal.connect(self._actualizar_vacio)
@@ -205,7 +207,26 @@ class Tabla(QTableWidget):
                 self.setItem(i, j, item)
         if self._texto_filtro:
             self.filtrar(self._texto_filtro)
+        self._ajustar_columnas()
         self._actualizar_vacio()
+
+    def _ajustar_columnas(self) -> None:
+        """Columnas al ancho de su contenido (sin cortar nombres); la última llena el resto.
+
+        Solo si la pantalla dejó el modo por omisión: si eligió anchos propios, se respetan.
+        """
+        cabecera = self.horizontalHeader()
+        if not self.ajuste_automatico or not self.columnCount():
+            return
+        modos = {cabecera.sectionResizeMode(i) for i in range(self.columnCount())}
+        if modos - {QHeaderView.Stretch, QHeaderView.ResizeToContents}:
+            self.ajuste_automatico = False
+            return
+        if modos == {QHeaderView.ResizeToContents} or (
+            modos == {QHeaderView.Stretch} and not cabecera.stretchLastSection()
+        ):
+            cabecera.setSectionResizeMode(QHeaderView.ResizeToContents)
+            cabecera.setStretchLastSection(True)
 
     def seleccionado(self) -> dict | None:
         filas = self.selectionModel().selectedRows()

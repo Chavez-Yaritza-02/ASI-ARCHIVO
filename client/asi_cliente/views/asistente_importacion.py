@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -226,6 +227,7 @@ class VistaAsistenteImportacion(QWidget):
         fila.addWidget(self.nombre_archivo, 1)
         capa.addLayout(fila)
         self.boton_subir = QPushButton("Subir y leer con OCR")
+        self.boton_subir.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.progreso = QProgressBar()
         self.progreso.setTextVisible(True)
         self.progreso.hide()
