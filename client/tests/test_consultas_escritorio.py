@@ -11,6 +11,7 @@ from asi_cliente.views.consultas import (
     VistaGrupos,
     VistaUbicacion,
 )
+from asi_cliente.views.documentos import VistaDocumentos
 
 
 def test_consultas_portables_sin_base_de_datos(qtbot):
@@ -22,6 +23,17 @@ def test_consultas_portables_sin_base_de_datos(qtbot):
             datos = {"fecha": "2026-11-02", "hora": "07:30:00", "zona": "America/Mexico_City"}
         elif ruta == "/configuracion/asistencia":
             datos = {"tolerancia_minutos": 10}
+        elif ruta == "/documentos/estado":
+            datos = {
+                "limite_mb": 20,
+                "formatos": ["PDF", "PNG", "JPEG"],
+                "cargas_habilitadas": False,
+                "antivirus_requerido": True,
+            }
+        elif ruta == "/documentos/categorias":
+            datos = [{"id": 1, "clave": "otro", "nombre": "Otro", "admite_justificantes": False}]
+        elif ruta == "/documentos":
+            datos = {"total": 0, "resultados": []}
         elif ruta == "/bitacora/horas":
             metricas = (
                 "programadas",
@@ -61,6 +73,7 @@ def test_consultas_portables_sin_base_de_datos(qtbot):
         ["docentes.ver", "horarios.ver", "asistencia.ver"],
     )
     for clase in (
+        VistaDocumentos,
         VistaAsistenciaHora,
         VistaBuscador,
         VistaGrupos,

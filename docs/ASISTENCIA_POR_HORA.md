@@ -93,6 +93,7 @@ y los periodos cerrados quedan de solo lectura.
 |---|---|---|
 | `GET /bitacora/horas?fecha` | Horas calculadas, capturas, totales y avisos | `asistencia.ver` |
 | `POST /asistencias/horas` | Captura de una hora programada | `asistencia.registrar` |
+| `POST /asistencias/horas/lote` | Hasta 100 capturas independientes, transacción atómica | `asistencia.registrar` |
 | `PATCH /asistencias/horas/{id}` | Corrección con motivo | `asistencia.registrar`, más autorización cuando aplica |
 | `GET /asistencias/horas/{id}/historial` | Cambios por registro | `asistencia.ver` |
 | `GET /bitacora/horas/exportar?fecha&formato=pdf\|xlsx` | Reporte del día | `asistencia.ver` + `reportes.generar` |
@@ -144,7 +145,8 @@ PostgreSQL ficticios. La comprobación portable de `client/tests/test_consultas_
 incluye esta pantalla y corre también en los jobs de Windows y macOS.
 
 La base sigue siendo exclusivamente `asi_archivo_pytest`, con todas las protecciones de
-la Etapa 5 activas. La Etapa 6 permanece sin comenzar.
+la Etapa 5 activas. La Etapa 6 agrega documentos vinculados a versiones exactas de
+evidencia; adjuntarlos no cambia estados ni minutos de asistencia.
 
 ### Resultado de validación local
 
@@ -156,3 +158,36 @@ la Etapa 5 activas. La Etapa 6 permanece sin comenzar.
   no se modifican migraciones publicadas ni se añaden dependencias.
 - Las pruebas recrean solamente el esquema de `asi_archivo_pytest`; no se ejecutan
   migraciones en la principal, la de desarrollo ni la aislada de OCR.
+
+### Revisión funcional previa a Etapa 6
+
+Se conservan las 217 pruebas del PR #7. Se agregaron dos pruebas funcionales antes de
+desarrollar el archivo: **219 aprobadas**. La revisión encontró que faltaba captura por
+lote; ahora permite estados distintos por fila y rechaza todo el lote si una hora falla,
+sin dejar capturas parciales. También corrigió un fallo nativo de Qt al encadenar
+formularios de captura y un recorte en encabezados del PDF.
+
+`server/tests/test_flujo_funcional_horas.py` abre la ventana y los diálogos Qt reales,
+contra la API y PostgreSQL de pruebas. Usa siete horas ficticias, registra asistencia,
+falta, retardo, justificación y parcial, corrige una falta y verifica historial y
+exportaciones. El resultado después de la corrección es:
+
+| Concepto | Minutos | Horas y minutos |
+|---|---:|---|
+| Programadas y exigibles | 420 | 7 h |
+| Cumplidas | 195 | 3 h 15 min |
+| Faltantes | 30 | 30 min |
+| Justificadas | 75 | 1 h 15 min |
+| Pendientes | 120 | 2 h |
+
+La revisión visual comprobó las capturas de pantalla de estados, formulario de lote,
+corrección, PDF renderizado y resumen de Excel. Los archivos ficticios quedan fuera del
+repositorio. Para reproducir evidencias locales opcionales:
+
+```bash
+mkdir -p /private/tmp/asi-revision-funcional
+ASI_REVISION_VISUAL_DIR=/private/tmp/asi-revision-funcional uv run pytest -q server/tests/test_flujo_funcional_horas.py
+```
+
+En Windows elige una ruta temporal propia. Las capturas Qt se obtienen con renderizado
+offscreen; no sustituyen la aceptación del usuario en sus computadoras de operación.

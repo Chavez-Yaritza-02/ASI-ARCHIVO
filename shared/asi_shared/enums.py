@@ -102,6 +102,7 @@ class Permiso(StrEnum):
     ASISTENCIA_CORREGIR = "asistencia.corregir"
     DOCUMENTOS_VER = "documentos.ver"
     DOCUMENTOS_GESTIONAR = "documentos.gestionar"
+    DOCUMENTOS_DESCARGAR = "documentos.descargar"
     REPORTES_VER = "reportes.ver"
     REPORTES_GENERAR = "reportes.generar"
     USUARIOS_GESTIONAR = "usuarios.gestionar"

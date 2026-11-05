@@ -217,6 +217,9 @@ class VistaAsistenciaHora(QWidget):
         self.boton_lote = QPushButton("Registrar horas seleccionadas")
         self.boton_lote.setVisible(usuario.puede("asistencia.registrar"))
         self.boton_lote.clicked.connect(self.registrar_lote)
+        self.boton_documentos = QPushButton("Documentos de esta hora")
+        self.boton_documentos.setVisible(usuario.puede("documentos.ver"))
+        self.boton_documentos.clicked.connect(self.abrir_documentos)
         self.boton_historial = QPushButton("Historial de esta hora")
         self.boton_pdf = QPushButton("PDF del día")
         self.boton_excel = QPushButton("Excel del día")
@@ -253,6 +256,7 @@ class VistaAsistenciaHora(QWidget):
             self.boton_registrar,
             self.boton_lote,
             self.boton_historial,
+            self.boton_documentos,
             self.boton_pdf,
             self.boton_excel,
         ):
@@ -357,6 +361,7 @@ class VistaAsistenciaHora(QWidget):
             )
         )
         self.boton_historial.setEnabled(bool(f and f["asistencia"]))
+        self.boton_documentos.setEnabled(bool(f and f["asistencia"]))
         self.boton_lote.setEnabled(
             self.pestanas.currentWidget() is self.tabla
             and bool(self.tabla.selectionModel().selectedRows())
@@ -416,6 +421,14 @@ class VistaAsistenciaHora(QWidget):
                 continue
             self.cargar()
             break
+
+    def abrir_documentos(self):
+        f = self.seleccionada()
+        if not f or not f["asistencia"] or not self.usuario.puede("documentos.ver"):
+            return
+        from asi_cliente.views.documentos import DialogoDocumentosHora
+
+        DialogoDocumentosHora(self.api, self.usuario, f["asistencia"], self).exec()
 
     def historial(self):
         f = self.seleccionada()

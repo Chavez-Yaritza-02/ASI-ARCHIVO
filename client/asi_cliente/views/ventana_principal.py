@@ -30,6 +30,7 @@ from asi_cliente.views.consultas import (
     VistaGrupos,
     VistaUbicacion,
 )
+from asi_cliente.views.documentos import VistaDocumentos
 from asi_cliente.views.horarios import VistaHorarios
 from asi_cliente.views.importacion import VistaImportacion
 from asi_cliente.views.periodos import VistaPeriodos
@@ -53,6 +54,7 @@ SECCIONES = [
 ]
 
 PANTALLAS = {
+    "Documentos": VistaDocumentos,
     "Asistencia por hora": VistaAsistenciaHora,
     "Bitácora del día": VistaBitacora,
     "Calendario": VistaCalendario,

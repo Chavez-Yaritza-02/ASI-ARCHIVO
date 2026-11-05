@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 5 y ampliación de Etapa 4 (asistencia por hora).
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 6 y validación funcional de asistencia por hora.
 
 ## 1. Objetivo
 
@@ -289,7 +289,7 @@ Windows). El texto del encabezado se configura con `ASI_INSTITUCION` y `ASI_DEPE
 La fecha de "hoy" se toma en la zona horaria de la Jefatura (`ASI_ZONA_HORARIA`,
 America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdata`.
 
-### Planeado
+### Asistencia horaria y archivo digital
 
 **Asistencia por hora (implementada como ampliación de Etapa 4)**
 - `asistencia_hora`: por docente, fecha y tramo programado de hasta 60 minutos, con
@@ -300,11 +300,14 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 - Detalles y pruebas en [ASISTENCIA_POR_HORA.md](ASISTENCIA_POR_HORA.md).
 
 **Documentos (Etapa 6)**
-- `categoria_documento`.
-- `documento`: título, categoría, fecha, palabras clave y `tsvector` para búsqueda en
-  español.
-- `documento_version`: ruta en el almacén, SHA-256, tamaño, tipo MIME y quién lo subió.
-- `documento_docente`: relación muchos a muchos.
+- `categoria_documento`: tipos y autorización para usarse como justificantes.
+- `documento`: nombre normalizado para búsqueda literal sin acentos, categoría, fecha,
+  docente y periodo opcionales, descripción y estado de archivo lógico.
+- `documento_version`: clave opaca del almacén privado, SHA-256, tamaño, tipo MIME,
+  páginas, número y autor. Versiones inmutables, sin borrado.
+- `documento_asistencia`: versión exacta vinculada a una captura horaria, con retiro
+  lógico e historial. Vincular nunca modifica la asistencia.
+- Migración aditiva `e6a001`. [Operación y seguridad](ARCHIVO_DIGITAL.md).
 
 ## 6. Seguridad
 
@@ -342,7 +345,7 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 1. Inicio de sesión con roles. ✅ (Etapa 1)
 2. Docentes y periodos. ✅ (Etapa 2)
 3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs ✅ (Etapa 3).
-4. Bitácora diaria con registro de estado, motivo, justificante e historial. ✅ (Etapa 4; el archivo del justificante llega en la Etapa 6)
+4. Asistencia por hora con estado, motivo, historial y documentos vinculados. ✅ (Etapas 4 y 6)
 5. Buscador, semana por grupo y ubicación programada. ✅ (Etapa 5)
 6. Servidor desplegado con HTTPS y respaldos.
 
@@ -356,7 +359,7 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 | 3 | Importación ZIP → PDF → OCR → revisión editable → borrador | ✅ Completa ([resultados](EVALUACION_OCR.md#etapa-3-prueba-controlada-del-importador)) |
 | 4 | Asistencia por hora, bitácora por turno conservada, calendario, incidencias y reportes | ✅ Ampliada con asistencia horaria independiente |
 | 5 | Buscador, horarios por grupo, cruces, ubicación programada, tolerancia configurable | ✅ Implementada; ver validaciones y límites en documentación de integridad |
-| 6 | Archivo digital de documentos | |
+| 6 | Archivo digital de documentos | ✅ Implementado; despliegue con datos reales pendiente de preparación operativa |
 | 7 | Reportes PDF y Excel | |
 | 8 | Servidor, instaladores, respaldos y revisión de seguridad | |
 
@@ -461,4 +464,18 @@ Los totales actuales no suman esas capturas ni los registros legados por turno.
 
 La nueva migración `a4h001` es solo aditiva y no cambia datos existentes ni migraciones
 publicadas. Se conserva la protección de pruebas de Etapa 5. La API, Qt y reportes se
-describen en [ASISTENCIA_POR_HORA.md](ASISTENCIA_POR_HORA.md). La Etapa 6 sigue pendiente.
+describen en [ASISTENCIA_POR_HORA.md](ASISTENCIA_POR_HORA.md).
+
+## 14. Etapa 6: archivo digital
+
+El servidor controla todas las lecturas y escrituras, con permisos existentes de
+consulta y gestión y el nuevo permiso `documentos.descargar` (inicialmente administrador).
+No expone rutas del almacén ni un directorio público. Cada versión conserva bytes
+originales y hash; las vistas previas son PNG generados en un subproceso con tiempo y
+recursos acotados, sin credenciales de la aplicación. La carga exige antivirus local
+por defecto y siempre en producción. No se realizan consultas a servicios de análisis
+externos. El almacenamiento aplica permisos POSIX privados o una DACL NTFS protegida.
+
+No se importan automáticamente originales del OCR ni documentos de carpetas reales.
+El archivo no calcula asistencias ni modifica las vigencias. Consulte
+[ARCHIVO_DIGITAL.md](ARCHIVO_DIGITAL.md) para configuración, límites y validaciones.

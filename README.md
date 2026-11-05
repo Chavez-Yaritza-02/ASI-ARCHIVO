@@ -9,6 +9,8 @@ La arquitectura, el modelo de datos y las etapas están en [docs/ARQUITECTURA.md
 
 - [uv](https://docs.astral.sh/uv/) (administra Python 3.12 y las dependencias)
 - PostgreSQL 17
+- **Archivo digital (servidor):** carpeta privada fuera del repositorio y antivirus local
+  compatible con `clamscan`, con firmas actualizadas. La carga se bloquea hasta configurarlo.
 - **Solo en el servidor:** Tesseract OCR con idiomas inglés y español, para importar
   horarios en PDF. Las computadoras cliente (Windows o Mac) no lo necesitan.
 
@@ -137,6 +139,8 @@ docente, turno y **Solo clases** para consultar materias; también puedes inclui
 actividades programadas.
 
 - Registra **Asistió**, **Retardo**, **Falta**, **Justificado** o **Parcial** por fila.
+- Selecciona varias filas y pulsa **Registrar horas seleccionadas** para asignar el estado de
+  cada hora; se guarda todo el lote o ninguno si alguna captura es inválida.
 - Para un parcial, indica entrada/salida dentro del tramo y los minutos justificados,
   si existen, con su motivo. Las fracciones de hora se conservan en minutos exactos.
 - Cada corrección exige motivo y deja historial; las de días anteriores requieren autorización.
@@ -148,7 +152,27 @@ actividades programadas.
 
 Consulta [reglas, auditoría, API y pruebas de asistencia por hora](docs/ASISTENCIA_POR_HORA.md).
 La migración nueva `a4h001` agrega una tabla sin modificar datos previos; su aplicación
-en bases con datos requiere una intervención autorizada. La Etapa 6 no se ha iniciado.
+en bases con datos requiere una intervención autorizada.
+
+## Uso: archivo digital (Etapa 6)
+
+- En **Documentos**, carga PDF, PNG o JPEG, hasta 20 MB por archivo (configurable entre
+  1 y 50 MB), con nombre, fecha y categoría; docente y periodo son opcionales.
+- Busca por nombre, docente, periodo, categoría y rango de fechas. Consulta la versión
+  actual o cualquiera anterior desde la vista previa; descargar el original exige permiso.
+- **Nueva versión** conserva los originales anteriores. Editar metadatos, archivar,
+  restaurar o retirar vínculos requiere motivo y queda auditado. No hay borrado definitivo.
+- Desde una asistencia ya capturada, pulsa **Documentos de esta hora** para cargar o
+  vincular una versión exacta de un justificante, permiso o comisión. Adjuntar evidencia
+  no cambia el estado de asistencia: su justificación se registra por el flujo horario.
+- El historial identifica cargas, consultas, vistas, descargas y modificaciones.
+
+Configura `ASI_ARCHIVO_RAIZ` y `ASI_ARCHIVO_ANTIVIRUS_CMD` en el servidor, según
+[Archivo digital: operación, seguridad y pruebas](docs/ARCHIVO_DIGITAL.md). El almacén
+predeterminado es `~/.local/share/asi-archivo/documentos`; usa una carpeta dedicada
+distinta por base. No copies documentos reales allí durante el desarrollo.
+La migración aditiva `e6a001`, posterior a `a4h001`, agrega el archivo sin convertir ni
+alterar asistencias o vigencias. No se ha aplicado a bases reales.
 
 ## Uso: bitácora por turno conservada (Etapa 4 original)
 
@@ -211,7 +235,8 @@ set -a && source ~/ASI-ARCHIVO-DATOS/etapa3/.env.ocr && set +a
 uv run uvicorn app.main:app --app-dir server --port 8001
 ```
 
-Para eliminarla por completo: `dropdb asi_archivo_ocr && dropuser asi_ocr`.
+Su conservación y cualquier intervención requieren autorización; las pruebas automáticas
+rechazan esta base y nunca utilizan sus documentos.
 
 ## Prueba de OCR (Etapa 1b)
 
