@@ -201,15 +201,17 @@ class VistaHorarios(QWidget):
         self.boton_guardar = QPushButton("Guardar cambios", objectName="primario")
         self.boton_descartar = QPushButton("Descartar borrador")
         self.boton_confirmar = QPushButton("Confirmar como vigente")
-        self.boton_vigencia = QPushButton("Confirmar / corregir fechas reales")
+        self.boton_vigencia = QPushButton("Fechas de vigencia…")
+        self.boton_vigencia.setToolTip("Confirmar o corregir desde qué fecha aplica esta versión")
         self.boton_vigencia.setVisible(self.puede_confirmar)
         self.boton_guardar.setVisible(self.puede_editar)
         self.boton_descartar.setVisible(self.puede_editar)
         self.boton_confirmar.setVisible(self.puede_confirmar)
-        acciones = QHBoxLayout()
-        acciones.addWidget(
-            QLabel("Doble clic en una celda para editarla; Supr para vaciar.", objectName="suave")
+        self.ayuda_cuadricula = QLabel(
+            "Doble clic en una celda para editarla; tecla Supr para vaciarla.", objectName="ayuda"
         )
+        self.ayuda_cuadricula.setVisible(self.puede_editar)
+        acciones = QHBoxLayout()
         acciones.addStretch()
         for b in (
             self.boton_vigencia,
@@ -223,13 +225,15 @@ class VistaHorarios(QWidget):
         capa_c.setContentsMargins(8, 0, 0, 0)
         capa_c.addWidget(self.estado)
         capa_c.addWidget(self.cuadricula, 1)
+        capa_c.addWidget(self.ayuda_cuadricula)
         capa_c.addWidget(self.advertencias)
         capa_c.addLayout(acciones)
 
         divisor = QSplitter()
         divisor.addWidget(panel_versiones)
         divisor.addWidget(panel_cuadricula)
-        divisor.setSizes([340, 900])
+        divisor.setSizes([300, 900])
+        panel_versiones.setMinimumWidth(280)
 
         capa = QVBoxLayout(self)
         capa.setContentsMargins(32, 28, 32, 28)

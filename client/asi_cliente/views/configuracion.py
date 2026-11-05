@@ -4,12 +4,15 @@ No cambia datos del servidor. El tema y el cierre de sesión usan las mismas se�
 que los botones del menú lateral.
 """
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -92,10 +95,15 @@ class VistaConfiguracion(QWidget):
         capa_apariencia.addLayout(fila)
 
         panel_atajos, capa_atajos = _panel("Atajos de teclado")
-        atajos = QFormLayout()
-        atajos.setVerticalSpacing(8)
-        for tecla, accion in ATAJOS:
-            atajos.addRow(QLabel(tecla, objectName="estado"), QLabel(accion, wordWrap=True))
+        atajos = QGridLayout()
+        atajos.setVerticalSpacing(10)
+        atajos.setHorizontalSpacing(16)
+        for fila, (tecla, accion) in enumerate(ATAJOS):
+            atajos.addWidget(QLabel(tecla, objectName="estado"), fila, 0, Qt.AlignTop)
+            texto = QLabel(accion, wordWrap=True)
+            texto.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+            atajos.addWidget(texto, fila, 1, Qt.AlignTop)
+        atajos.setColumnStretch(1, 1)
         capa_atajos.addLayout(atajos)
 
         izquierda = QVBoxLayout()

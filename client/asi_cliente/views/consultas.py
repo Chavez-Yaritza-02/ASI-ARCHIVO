@@ -42,10 +42,12 @@ class Filtros(QWidget):
         formulario.addRow("Periodo", self.periodo)
         formulario.addRow("Carrera", self.carrera)
         formulario.addRow("Semestre", self.semestre)
+        self.nombres_periodo: dict[int, str] = {}
         if usuario.puede("horarios.ver"):
             try:
                 for p in api.get("/periodos"):
                     self.periodo.addItem(p["nombre"], p["id"])
+                    self.nombres_periodo[p["id"]] = p["nombre"]
             except ErrorApi as e:
                 mostrar_error(self, e)
         else:
@@ -134,6 +136,7 @@ class VistaBuscador(QWidget):
         capa.addWidget(QLabel("Actividades según la versión vigente en la fecha seleccionada"))
         capa.addWidget(self.tabla, 1)
         pagina = QHBoxLayout()
+        pagina.addStretch()
         pagina.addWidget(self.boton_anterior)
         pagina.addWidget(self.boton_siguiente)
         capa.addLayout(pagina)
@@ -253,7 +256,8 @@ class VistaGrupos(QWidget):
             for g in self.api.get(
                 "/consultas/grupos", **self.filtros.datos(), letra=self.letra.text().strip() or None
             ):
-                self.grupo.addItem(f"{g['clave']} · periodo #{g['periodo_id']}", g["id"])
+                periodo = self.filtros.nombres_periodo.get(g["periodo_id"], "sin periodo")
+                self.grupo.addItem(f"{g['clave']} · {periodo}", g["id"])
         except ErrorApi as e:
             mostrar_error(self, e)
 
@@ -322,8 +326,11 @@ class VistaUbicacion(QWidget):
                 Columna(
                     "Aula programada", lambda b: b["aula_programada"] or "Revisar avisos / sin aula"
                 ),
-            ]
+            ],
+            "Elige un docente, la fecha y la hora, y pulsa «Consultar ubicación programada».",
         )
+        self.fecha.setDisplayFormat("dd/MM/yyyy")
+        self.boton_consultar.setObjectName("primario")
         capa = QVBoxLayout(self)
         capa.addWidget(
             encabezado(
@@ -332,15 +339,22 @@ class VistaUbicacion(QWidget):
             )
         )
         fila = QHBoxLayout()
+        for w in (self.nombre, self.boton_buscar):
+            fila.addWidget(w)
+        fila.addStretch()
+        capa.addLayout(fila)
+        fila = QHBoxLayout()
         for w in (
-            self.nombre,
-            self.boton_buscar,
+            QLabel("Docente"),
             self.docente,
+            QLabel("Fecha"),
             self.fecha,
+            QLabel("Hora"),
             self.hora,
             self.boton_consultar,
         ):
             fila.addWidget(w)
+        fila.addStretch()
         capa.addLayout(fila)
         capa.addWidget(self.aviso)
         capa.addWidget(self.detalle)
@@ -414,8 +428,24 @@ class VistaConfiguracionAsistencia(QWidget):
                 "Valor provisional inicial: 10 minutos. Los cambios quedan auditados.",
             )
         )
-        capa.addWidget(self.minutos)
-        capa.addWidget(self.boton_guardar)
+        self.minutos.setMinimumWidth(160)
+        self.minutos.setAccessibleName("Tolerancia de retardo en minutos")
+        self.boton_guardar.setObjectName("primario")
+        fila = QHBoxLayout()
+        fila.addWidget(QLabel("Minutos de tolerancia"))
+        fila.addWidget(self.minutos)
+        fila.addWidget(self.boton_guardar)
+        fila.addStretch()
+        capa.addLayout(fila)
+        capa.addWidget(
+            QLabel(
+                "Es la referencia para decidir si una llegada cuenta como retardo; se muestra "
+                "en la bitácora. El sistema no marca retardos por su cuenta: el estado de cada "
+                "hora lo elige quien registra la asistencia.",
+                objectName="ayuda",
+                wordWrap=True,
+            )
+        )
         capa.addWidget(self.mensaje)
         capa.addStretch()
         try:

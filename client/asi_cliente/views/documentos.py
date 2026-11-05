@@ -135,7 +135,7 @@ class VistaDocumentos(QWidget):
         panel = QWidget()
         capa_p = QVBoxLayout(panel)
         selector = QHBoxLayout()
-        for w in (self.versiones, QLabel("Página"), self.pagina, self.boton_ver):
+        for w in (QLabel("Versión"), self.versiones, QLabel("Página"), self.pagina, self.boton_ver):
             selector.addWidget(w)
         capa_p.addLayout(selector)
         capa_p.addWidget(scroll, 1)
@@ -144,7 +144,7 @@ class VistaDocumentos(QWidget):
         divisor.addWidget(self.tabla)
         divisor.addWidget(panel)
         divisor.setSizes([250, 450])
-        self.boton_cargar = QPushButton("Cargar documento")
+        self.boton_cargar = QPushButton("Cargar documento", objectName="primario")
         self.boton_version = QPushButton("Nueva versión")
         self.boton_editar = QPushButton("Editar metadatos")
         self.boton_archivar = QPushButton("Archivar / restaurar")

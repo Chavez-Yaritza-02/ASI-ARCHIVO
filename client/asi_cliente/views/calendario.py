@@ -55,7 +55,9 @@ class VistaCalendario(QWidget):
                 Columna("Turno", lambda e: (e["turno"] or "todo el día").capitalize()),
                 Columna("Motivo", lambda e: e["descripcion"]),
                 Columna("Estado", lambda e: "Vigente" if e["activo"] else "Anulado"),
-            ]
+            ],
+            "No hay días inhábiles ni eventos registrados. Usa «Nuevo evento» para agregar "
+            "vacaciones, suspensiones o días festivos.",
         )
         cabecera = self.tabla.horizontalHeader()
         for col in range(6):
