@@ -80,6 +80,8 @@ Crea `servidor/certificado/ASI-ARCHIVO-raiz.crt`. Debe instalarse en cada PC com
   certificado → Usuario actual → almacén **Entidades de certificación raíz de confianza**
   (pasos detallados en el Manual de uso, sección 9). En PowerShell:
   `Import-Certificate -FilePath ASI-ARCHIVO-raiz.crt -CertStoreLocation Cert:\CurrentUser\Root`
+  Windows mostrará una **advertencia de seguridad**; compara la huella con la que te dio TI
+  y pulsa **Sí**.
 
 El certificado raíz no contiene datos de la Jefatura; la clave privada nunca sale del
 servidor.

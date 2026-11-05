@@ -20,11 +20,12 @@ try {
     if ($p.ExitCode -ne $Esperado) { throw "Resultado TLS incorrecto: $Nombre" }
   }
   Comprobar 'sin-confianza' 'https://localhost:18443' 2
-  $importado = Import-Certificate -FilePath $cert -CertStoreLocation Cert:\CurrentUser\Root
+  # LocalMachine: CurrentUser\Root abre un diálogo de confirmación que bloquea el runner.
+  $importado = Import-Certificate -FilePath $cert -CertStoreLocation Cert:\LocalMachine\Root
   Comprobar 'con-confianza' 'https://localhost:18443' 0
   Comprobar 'nombre-incorrecto' 'https://127.0.0.1:18443' 2
   '{"tls_real":true,"no_confiable_rechazado":true,"confiable_aceptado":true,"nombre_incorrecto_rechazado":true}' | Set-Content dist/instalador/tls-windows.json
 } finally {
-  if ($importado) { Remove-Item ("Cert:\CurrentUser\Root\"+$importado.Thumbprint) }
+  if ($importado) { Remove-Item ("Cert:\LocalMachine\Root\"+$importado.Thumbprint) }
   Stop-Process -Id $servicio.Id -ErrorAction SilentlyContinue
 }
