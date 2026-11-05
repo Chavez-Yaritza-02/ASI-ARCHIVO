@@ -1,4 +1,4 @@
-"""Pantalla "Bitácora del día": lo programado frente a lo registrado.
+"""Pantalla "Bitácora del día" (legado por turno): lo programado frente a lo registrado.
 
 - La lista se arma con los horarios vigentes en la fecha elegida (uno por docente y turno).
 - Un docente sin registro aparece "Pendiente de verificar": el sistema nunca marca faltas
@@ -322,7 +322,11 @@ def _describir_cambio(c: dict) -> str:
     despues = c["despues"] or {}
     antes = c["antes"] or {}
     if c["accion"] == "registrar":
-        return ESTADOS.get(despues.get("estado"), ("?",))[0]
+        return (
+            "Parcial"
+            if despues.get("estado") == "parcial"
+            else ESTADOS.get(despues.get("estado"), ("?",))[0]
+        )
     partes = [
         f"{k}: {antes.get(k) or '—'} → {despues.get(k) or '—'}"
         for k in despues
@@ -451,7 +455,7 @@ class VistaBitacora(QWidget):
         capa.setContentsMargins(32, 28, 32, 28)
         capa.addWidget(
             encabezado(
-                "Bitácora del día",
+                "Bitácora por turno (legado)",
                 "Docentes programados según el horario vigente en la fecha. Sin registro aparecen "
                 "como pendientes: el sistema nunca marca faltas por su cuenta.",
             )

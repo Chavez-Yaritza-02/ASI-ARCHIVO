@@ -1,6 +1,7 @@
 """Importa todos los modelos para que Alembic los detecte."""
 
 from app.models.asistencia import Asistencia, EventoCalendario, Incidencia
+from app.models.asistencia_hora import AsistenciaHora
 from app.models.auditoria import Auditoria
 from app.models.base import Base
 from app.models.catalogos import Asignatura, Aula, Docente, Grupo
@@ -17,6 +18,7 @@ from app.models.seguridad import Permiso, Rol, Usuario
 __all__ = [
     "Asignatura",
     "Asistencia",
+    "AsistenciaHora",
     "Auditoria",
     "Aula",
     "Base",

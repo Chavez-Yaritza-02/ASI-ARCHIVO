@@ -202,7 +202,7 @@ def test_migracion_desde_etapa4_conserva_versiones_y_evidencia(base_de_datos):
                 ).scalar()
                 == 2
             )
-            assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "e5a001"
+            assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "a4h001"
         finally:
             transaccion.rollback()
 

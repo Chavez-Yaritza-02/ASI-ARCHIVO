@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 5 y correcciones de integridad.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 5 y ampliación de Etapa 4 (asistencia por hora).
 
 ## 1. Objetivo
 
@@ -291,9 +291,13 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 
 ### Planeado
 
-**Asistencia por clase (futuro)**
-- `asistencia_clase`: por bloque y fecha. Convivirá con `asistencia` (por turno), así
-  que los registros anteriores no se pierden.
+**Asistencia por hora (implementada como ampliación de Etapa 4)**
+- `asistencia_hora`: por docente, fecha y tramo programado de hasta 60 minutos, con
+  referencia a bloque/versión y copia inmutable de su programación. Estado parcial,
+  minutos cumplidos/justificados y reportes con pendientes y suspensiones separados.
+- Convive con `asistencia` (legado por turno) sin convertir sus registros automáticamente.
+- Migración aditiva `a4h001`; preserva vigencias y auditoría existentes.
+- Detalles y pruebas en [ASISTENCIA_POR_HORA.md](ASISTENCIA_POR_HORA.md).
 
 **Documentos (Etapa 6)**
 - `categoria_documento`.
@@ -350,7 +354,7 @@ America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdat
 | 1b | Prueba de OCR con los PDFs reales (solo local) | ✅ Completa ([resultados](EVALUACION_OCR.md)) |
 | 2 | Docentes, periodos, catálogos, captura y edición de horarios con versiones | ✅ Completa |
 | 3 | Importación ZIP → PDF → OCR → revisión editable → borrador | ✅ Completa ([resultados](EVALUACION_OCR.md#etapa-3-prueba-controlada-del-importador)) |
-| 4 | Bitácora diaria, calendario institucional, incidencias y reportes PDF/Excel | ✅ Completa |
+| 4 | Asistencia por hora, bitácora por turno conservada, calendario, incidencias y reportes | ✅ Ampliada con asistencia horaria independiente |
 | 5 | Buscador, horarios por grupo, cruces, ubicación programada, tolerancia configurable | ✅ Implementada; ver validaciones y límites en documentación de integridad |
 | 6 | Archivo digital de documentos | |
 | 7 | Reportes PDF y Excel | |
@@ -440,3 +444,21 @@ el esquema. Se usa en pytest, Alembic y CLI. Véase
   macOS siguen en Etapa 8. La validación gráfica automatizada usa Qt offscreen.
 - Las fechas heredadas requieren evidencia humana. No se reconstruyen automáticamente
   a partir del periodo, del nombre del archivo ni de la fecha de creación del registro.
+
+
+## 13. Ampliación de Etapa 4: asistencia por hora
+
+La unidad anterior `docente + fecha + turno` continúa disponible como legado. La
+captura principal y los reportes nuevos usan `asistencia_hora`; una hora puede
+registrarse como asistida y otra como falta el mismo día. Los parciales representan
+un intervalo de presencia dentro del tramo, con minutos justificados explícitos.
+La tolerancia no acredita minutos que no se cumplieron.
+
+Se calcula cada fecha con la vigencia confirmada que corresponda. Las capturas llevan
+copia del programa; si una corrección de vigencia las deja fuera del programa actual,
+se conservan en historial separado y se impide capturar horas nuevas superpuestas.
+Los totales actuales no suman esas capturas ni los registros legados por turno.
+
+La nueva migración `a4h001` es solo aditiva y no cambia datos existentes ni migraciones
+publicadas. Se conserva la protección de pruebas de Etapa 5. La API, Qt y reportes se
+describen en [ASISTENCIA_POR_HORA.md](ASISTENCIA_POR_HORA.md). La Etapa 6 sigue pendiente.
