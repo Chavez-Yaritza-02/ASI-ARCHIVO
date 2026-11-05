@@ -52,8 +52,11 @@ def ejecutar(app):
             "/aulas",
             "/consultas/grupos",
             "/documentos/categorias",
+            "/horarios/cambios",
         ):
             datos = []
+        elif ruta == "/periodos/activo":
+            datos = None
         elif ruta == "/documentos/estado":
             datos = {"limite_mb": 20, "cargas_habilitadas": False}
         elif ruta == "/documentos":

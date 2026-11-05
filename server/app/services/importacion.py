@@ -413,6 +413,11 @@ def avisos(sesion: Session, pagina: PaginaImportada) -> list[str]:
         lista.append(
             f"{letras} celda(s) con grupo pendiente de validación (solo se conoce la letra)"
         )
+    if pagina.docente_id is not None:
+        # Choques con horarios vigentes de otros docentes, antes de aprobar.
+        lista += servicio_horarios.choques(
+            sesion, periodo.id, pagina.docente_id, _a_bloques(pagina)
+        )
     existente = _horario_existente(sesion, pagina)
     if existente is not None:
         lista.append(

@@ -8,8 +8,8 @@ Ciclo de vida de una versión (ver app/models/horarios.py):
 Validaciones:
 - Errores (impiden guardar): bloques del mismo horario que se traslapan o se
   repiten, horas inválidas, catálogos inexistentes o inactivos, materia sin grupo.
-- Advertencias (piden confirmación explícita al confirmar): el aula ya está ocupada
-  a esa hora por otro docente, o la versión es idéntica a la vigente.
+- Advertencias (piden confirmación explícita al confirmar): el aula o el grupo ya
+  están ocupados a esa hora por otro docente, o la versión es idéntica a la vigente.
 """
 
 from dataclasses import dataclass
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Asignatura,
+    Auditoria,
     Aula,
     BloqueHorario,
     Docente,
@@ -140,6 +141,44 @@ def validar_bloques(sesion: Session, bloques: list[BloqueEntrada]) -> list[str]:
     return errores
 
 
+def choques(sesion: Session, periodo_id: int, docente_id: int, bloques) -> list[str]:
+    """Aula o grupo ocupados a la misma hora por OTRO docente (horarios vigentes del periodo).
+
+    `bloques` solo necesita dia, hora_inicio, hora_fin, aula_id y grupo_id: sirve para
+    bloques guardados y para las celdas de una página importada antes de aprobarla.
+    """
+    otros = sesion.scalars(
+        select(BloqueHorario)
+        .join(Horario)
+        .where(
+            Horario.periodo_id == periodo_id,
+            Horario.estado == "vigente",
+            Horario.docente_id != docente_id,
+            or_(BloqueHorario.aula_id.is_not(None), BloqueHorario.grupo_id.is_not(None)),
+        )
+    ).all()
+    avisos: list[str] = []
+    for b in bloques:
+        for o in otros:
+            if o.dia != b.dia or not _se_traslapan(
+                b.hora_inicio, b.hora_fin, o.hora_inicio, o.hora_fin
+            ):
+                continue
+            cuando = _texto_bloque(b.dia, b.hora_inicio, b.hora_fin)
+            de_a = f"de {o.hora_inicio:%H:%M} a {o.hora_fin:%H:%M} ({o.asignatura.nombre})"
+            if b.aula_id is not None and o.aula_id == b.aula_id:
+                avisos.append(
+                    f"Aula {o.aula.clave} ocupada el {cuando}: "
+                    f"{o.horario.docente.nombre} la tiene {de_a}"
+                )
+            if b.grupo_id is not None and o.grupo_id == b.grupo_id:
+                avisos.append(
+                    f"Grupo {o.grupo.clave or o.grupo.letra} ocupado el {cuando}: "
+                    f"{o.horario.docente.nombre} le da clase {de_a}"
+                )
+    return list(dict.fromkeys(avisos))
+
+
 def advertencias(sesion: Session, horario: Horario) -> list[str]:
     """Situaciones que no impiden confirmar pero que el administrador debe revisar."""
     avisos: list[str] = []
@@ -157,31 +196,7 @@ def advertencias(sesion: Session, horario: Horario) -> list[str]:
             "(falta carrera, semestre o periodo)"
         )
 
-    # El aula ya está ocupada a esa hora por otro docente (horarios vigentes del periodo).
-    otros = sesion.scalars(
-        select(BloqueHorario)
-        .join(Horario)
-        .where(
-            Horario.periodo_id == horario.periodo_id,
-            Horario.estado == "vigente",
-            Horario.docente_id != horario.docente_id,
-            BloqueHorario.aula_id.is_not(None),
-        )
-    ).all()
-    for b in horario.bloques:
-        if b.aula_id is None:
-            continue
-        for o in otros:
-            if (
-                o.aula_id == b.aula_id
-                and o.dia == b.dia
-                and _se_traslapan(b.hora_inicio, b.hora_fin, o.hora_inicio, o.hora_fin)
-            ):
-                cuando = _texto_bloque(b.dia, b.hora_inicio, b.hora_fin)
-                avisos.append(
-                    f"Aula {b.aula.clave} ocupada el {cuando}: {o.horario.docente.nombre} la "
-                    f"tiene de {o.hora_inicio:%H:%M} a {o.hora_fin:%H:%M} ({o.asignatura.nombre})"
-                )
+    avisos += choques(sesion, horario.periodo_id, horario.docente_id, horario.bloques)
 
     # Versión idéntica a la vigente: probablemente un duplicado.
     actual = vigente(sesion, horario.docente_id, horario.periodo_id)
@@ -507,3 +522,54 @@ def descartar(sesion: Session, usuario: Usuario, id_: int) -> Horario:
     )
     sesion.commit()
     return horario
+
+
+ACCIONES_CAMBIO = {
+    "crear": "Creó la versión",
+    "editar": "Editó las notas",
+    "editar_bloques": "Editó las horas",
+    "confirmar": "Confirmó como vigente",
+    "reemplazar": "Pasó al historial",
+    "confirmar_vigencia": "Fijó las fechas reales",
+    "descartar": "Descartó el borrador",
+}
+
+
+def cambios(
+    sesion: Session, periodo_id: int | None, docente_id: int | None, limite: int = 200
+) -> list[dict]:
+    """Registro de cambios de horarios (tomado de la auditoría), del más reciente al más antiguo."""
+    horarios = {h.id: h for h in listar(sesion, docente_id, periodo_id, None)}
+    if not horarios:
+        return []
+    registros = sesion.scalars(
+        select(Auditoria)
+        .where(Auditoria.entidad == "horario", Auditoria.entidad_id.in_(map(str, horarios)))
+        .order_by(Auditoria.id.desc())
+        .limit(limite)
+    ).all()
+    salida = []
+    for a in registros:
+        h = horarios[int(a.entidad_id)]
+        antes, despues = a.antes or {}, a.despues or {}
+        detalle = ""
+        if a.accion == "editar_bloques":
+            detalle = f"{len(antes.get('bloques', []))} → {len(despues.get('bloques', []))} bloques"
+        elif a.accion == "confirmar_vigencia":
+            detalle = f"Desde {despues.get('vigente_desde')}. Motivo: {despues.get('motivo', '')}"
+        elif a.accion == "confirmar" and despues.get("advertencias_aceptadas"):
+            detalle = "Con advertencias aceptadas: " + "; ".join(despues["advertencias_aceptadas"])
+        usuario = sesion.get(Usuario, a.usuario_id) if a.usuario_id else None
+        salida.append(
+            {
+                "fecha": a.fecha,
+                "usuario": usuario.nombre if usuario else "Sistema",
+                "accion": ACCIONES_CAMBIO.get(a.accion, a.accion),
+                "horario_id": h.id,
+                "docente": h.docente.nombre,
+                "periodo": h.periodo.nombre,
+                "version": h.version,
+                "detalle": detalle,
+            }
+        )
+    return salida
