@@ -299,7 +299,8 @@ class VistaImportacion(QWidget):
         self.avance = QLabel("", objectName="suave")
         self.boton_cancelar = QPushButton("Cancelar importación")
         barra = QHBoxLayout()
-        barra.addWidget(QLabel("Periodo"))
+        self.etiqueta_periodo = QLabel("Periodo")
+        barra.addWidget(self.etiqueta_periodo)
         barra.addWidget(self.periodo)
         barra.addWidget(self.boton_importar)
         barra.addSpacing(24)
@@ -403,6 +404,21 @@ class VistaImportacion(QWidget):
         self.boton_restaurar.clicked.connect(lambda: self._accion_pagina("restaurar"))
         self.boton_aprobar.clicked.connect(self.aprobar)
         self.recargar()
+
+    def modo_asistente(self) -> None:
+        """Dentro del asistente, el periodo y el archivo se eligen en pasos anteriores."""
+        for w in (self.etiqueta_periodo, self.periodo, self.boton_importar):
+            w.hide()
+        for titulo in self.findChildren(QLabel, "subtitulo"):
+            titulo.hide()
+
+    def seleccionar_importacion(self, importacion_id: int) -> None:
+        try:
+            self._llenar_lotes(self.api.get("/importaciones"), importacion_id)
+        except ErrorApi as error:
+            mostrar_error(self, error)
+            return
+        self.cargar_importacion()
 
     # --- carga ---------------------------------------------------------------------
 

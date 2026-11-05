@@ -10,15 +10,26 @@ from asi_cliente.views.comunes import (
     Columna,
     DialogoFormulario,
     Tabla,
+    busqueda_para,
     confirmar,
     encabezado,
     mostrar_error,
 )
 
 CAMPOS = [
-    Campo("nombre", "Nombre (p. ej. AGOSTO - DICIEMBRE 2026)", obligatorio=True),
-    Campo("fecha_inicio", "Inicio", "fecha"),
-    Campo("fecha_fin", "Fin", "fecha"),
+    Campo(
+        "nombre",
+        "Nombre",
+        obligatorio=True,
+        ayuda="Por ejemplo: AGOSTO - DICIEMBRE 2026 o ENERO - JUNIO 2027.",
+    ),
+    Campo("fecha_inicio", "Primer día", "fecha", ayuda="Primer día del semestre."),
+    Campo(
+        "fecha_fin",
+        "Último día",
+        "fecha",
+        ayuda="No puede traslaparse con las fechas de otro periodo.",
+    ),
 ]
 
 
@@ -37,15 +48,17 @@ class VistaPeriodos(QWidget):
                 Columna("Inicio", lambda p: _fecha(p["fecha_inicio"])),
                 Columna("Fin", lambda p: _fecha(p["fecha_fin"])),
                 Columna("Estado", lambda p: p["estado"], estado=True),
-            ]
+            ],
+            "Aún no hay periodos. Crea el primero con «Nuevo periodo».",
         )
+        self.buscar = busqueda_para(self.tabla, "Buscar periodo…")
         self.boton_nuevo = QPushButton("Nuevo periodo", objectName="primario")
         self.boton_editar = QPushButton("Editar")
         self.boton_activar = QPushButton("Activar")
         self.boton_cerrar = QPushButton("Cerrar periodo")
 
         barra = QHBoxLayout()
-        barra.addStretch()
+        barra.addWidget(self.buscar, 1)
         for boton in (self.boton_nuevo, self.boton_editar, self.boton_activar, self.boton_cerrar):
             boton.setVisible(self.puede_gestionar)
             barra.addWidget(boton)
@@ -118,7 +131,7 @@ class VistaPeriodos(QWidget):
             ),
         }
         pregunta, detalle = avisos[accion]
-        if not confirmar(self, pregunta.format(p["nombre"]), detalle):
+        if not confirmar(self, pregunta.format(p["nombre"]), detalle, texto_si=f"Sí, {accion}"):
             return
         try:
             self.api.post(f"/periodos/{p['id']}/{accion}")
