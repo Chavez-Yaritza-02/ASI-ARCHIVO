@@ -130,9 +130,12 @@ GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](
 
 ## Uso: importar horarios desde PDF (Etapa 3)
 
-1. En **Catálogos** captura (o revisa) aulas, asignaturas y grupos del periodo. Entre más
-   completo esté el catálogo, más datos se asignan solos.
-2. En **Importar horarios** elige el periodo y pulsa **Importar archivo…** (ZIP o PDF).
+> Desde el rediseño de la interfaz, la importación es un asistente de 4 pasos en
+> **Horarios › Importar horarios** (detalle en [docs/MANUAL_USUARIO.md](docs/MANUAL_USUARIO.md), sección 7).
+
+1. En **Administración › Catálogos** captura (o revisa) aulas, asignaturas y grupos del
+   periodo. Entre más completo esté el catálogo, más datos se asignan solos.
+2. En **Horarios › Importar horarios** elige el periodo, el archivo (ZIP o PDF) y súbelo.
    El servidor hace el OCR en segundo plano; la pantalla muestra el avance.
 3. Elige cada página y revísala. Colores de la cuadrícula:
    - **Verde:** coincide con el catálogo o ya lo confirmaste.
@@ -148,7 +151,7 @@ vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
 
 ## Uso: asistencia por hora de clase (ampliación de Etapa 4)
 
-**Asistencia por hora** es ahora la primera pantalla. Cada hora programada se captura
+**Asistencias › Registro por hora** (la pantalla de Inicio resume el día). Cada hora programada se captura
 por separado: un docente puede asistir a una y faltar a otra del mismo día. Elige fecha,
 docente, turno y **Solo clases** para consultar materias; también puedes incluir otras
 actividades programadas.
