@@ -56,7 +56,10 @@ def ejecutar(app):
         ):
             datos = []
         elif ruta == "/periodos/activo":
-            datos = None
+            # Sin periodo activo el servidor responde «null» (JSON), no un cuerpo vacío.
+            return httpx.Response(
+                200, content=b"null", headers={"content-type": "application/json"}
+            )
         elif ruta == "/documentos/estado":
             datos = {"limite_mb": 20, "cargas_habilitadas": False}
         elif ruta == "/documentos":
