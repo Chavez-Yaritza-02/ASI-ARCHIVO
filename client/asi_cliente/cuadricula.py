@@ -7,6 +7,8 @@ La cuadrícula usa celdas de una hora, igual que los horarios institucionales
 
 from dataclasses import dataclass
 
+from PySide6.QtCore import QEvent, QObject
+
 DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]
 TITULOS_DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
 HORAS = list(range(7, 23))  # filas: 07:00 … 22:00 (la última termina a las 23:00)
@@ -20,17 +22,66 @@ class Celda:
     grupo_letra: str | None = None  # letra pendiente de validación (sin grupo completo)
 
 
+class _AjusteInicial(QObject):
+    """Mantiene visible la primera clase hasta que el usuario desplace la tabla a mano.
+
+    Al abrir una página la tabla puede no tener aún su tamaño final (pantalla oculta,
+    ventana que se redimensiona): el desplazamiento se repite al mostrarse o cambiar de
+    tamaño, para que la primera clase quede completa debajo del encabezado.
+    """
+
+    def __init__(self, tabla):
+        super().__init__(tabla)
+        self.tabla, self.fila, self.activo, self._moviendo = tabla, None, False, False
+        tabla.viewport().installEventFilter(self)
+        tabla.verticalScrollBar().valueChanged.connect(self._movido)
+
+    def _movido(self, *_):
+        if not self._moviendo:
+            self.activo = False  # lo desplazó el usuario: no volver a moverlo
+
+    def eventFilter(self, _objeto, evento):
+        if self.activo and evento.type() in (QEvent.Show, QEvent.Resize):
+            self.aplicar()
+        return False
+
+    def aplicar(self):
+        tabla, fila = self.tabla, self.fila
+        if fila is None:
+            return
+        self._moviendo = True
+        try:
+            if fila == 0:
+                tabla.verticalScrollBar().setValue(0)
+            else:
+                alto = tabla.viewport().height()
+                # Una hora antes como referencia, solo si caben ambas completas.
+                previa = fila - 1
+                cabe = tabla.rowHeight(previa) + tabla.rowHeight(fila) <= alto
+                tabla.scrollTo(
+                    tabla.model().index(previa if cabe else fila, 0),
+                    tabla.ScrollHint.PositionAtTop,
+                )
+        finally:
+            self._moviendo = False
+
+
+def fila_visible_completa(tabla, fila: int) -> bool:
+    """True si la fila se ve entera (ni la hora ni el contenido quedan cortados)."""
+    y = tabla.rowViewportPosition(fila)
+    return y >= 0 and y + tabla.rowHeight(fila) <= tabla.viewport().height()
+
+
 def mostrar_primera_clase(tabla, horas_ocupadas) -> None:
     """Desplaza la cuadrícula hasta la primera hora con clase (p. ej. turno vespertino).
 
     Sin esto, un horario que empieza a las 17:00 parece vacío porque se ve desde las 07:00.
     """
     horas = sorted(h for h in horas_ocupadas if h in HORAS)
-    if not horas:
-        tabla.scrollToTop()
-        return
-    fila = max(HORAS.index(horas[0]) - 1, 0)  # una fila antes, como referencia
-    tabla.scrollTo(tabla.model().index(fila, 0), tabla.ScrollHint.PositionAtTop)
+    ajuste = tabla.findChild(_AjusteInicial) or _AjusteInicial(tabla)
+    ajuste.fila = HORAS.index(horas[0]) if horas else 0
+    ajuste.activo = True
+    ajuste.aplicar()
 
 
 class CuadriculaNoCompatible(ValueError):

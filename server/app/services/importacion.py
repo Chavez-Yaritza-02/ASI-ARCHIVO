@@ -536,6 +536,41 @@ def guardar_revision(
     return pagina
 
 
+def sugerencias(sesion: Session, pagina_id: int) -> dict:
+    """Vuelve a comparar lo leído con los catálogos *actuales*, sin guardar nada.
+
+    Sirve para páginas importadas antes de dar de alta materias o aulas: lo que no tenía
+    coincidencia puede tenerla ahora. Solo se proponen valores; el usuario los acepta.
+    """
+    pagina = obtener_pagina(sesion, pagina_id)
+    catalogos = _cargar_catalogos(sesion)
+    salida: dict = {"docente": None, "celdas": []}
+
+    def propuesta(r: co.Resultado) -> dict | None:
+        if r.id is None and not r.candidatos:
+            return None
+        return {"id": r.id, "estado": r.estado, "candidatos": r.candidatos}
+
+    if pagina.estado != "por_revisar":
+        return salida
+    if pagina.docente_id is None:
+        salida["docente"] = propuesta(
+            co.buscar_docente(pagina.docente_texto, pagina.nomina, catalogos.docentes)
+        )
+    for c in pagina.celdas:
+        if c.origen != "ocr":
+            continue
+        if c.asignatura_id is None and c.actividad_texto:
+            p = propuesta(co.buscar_asignatura(c.actividad_texto, catalogos.asignaturas))
+            if p:
+                salida["celdas"].append({"celda_id": c.id, "campo": "asignatura", **p})
+        if c.aula_id is None and c.aula_estado == co.SIN_COINCIDENCIA and c.aula_texto:
+            p = propuesta(co.buscar_aula(c.aula_texto, catalogos.aulas))
+            if p:
+                salida["celdas"].append({"celda_id": c.id, "campo": "aula", **p})
+    return salida
+
+
 def aceptar_sugerencias(sesion: Session, usuario: Usuario, pagina_id: int) -> PaginaImportada:
     """Acepta todas las sugerencias de la página (docente, asignaturas y aulas)."""
     pagina = obtener_pagina(sesion, pagina_id)

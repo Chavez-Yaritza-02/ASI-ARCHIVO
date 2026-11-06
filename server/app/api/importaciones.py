@@ -279,6 +279,28 @@ def guardar_revision(id_: int, datos: RevisionEntrada, sesion: SesionDB, usuario
     return _detalle_pagina(sesion, pagina)
 
 
+class Propuesta(BaseModel):
+    id: int | None
+    estado: str
+    candidatos: list[int]
+
+
+class PropuestaCelda(Propuesta):
+    celda_id: int
+    campo: str  # asignatura | aula
+
+
+class SugerenciasSalida(BaseModel):
+    docente: Propuesta | None
+    celdas: list[PropuestaCelda]
+
+
+@router.get("/paginas/{id_}/sugerencias", response_model=SugerenciasSalida)
+def sugerencias(id_: int, sesion: SesionDB, _: Editor):
+    """Sugerencias con los catálogos actuales. Solo lectura: no cambia la página."""
+    return servicio.sugerencias(sesion, id_)
+
+
 @router.post("/paginas/{id_}/aceptar-sugerencias", response_model=PaginaDetalle)
 def aceptar_sugerencias(id_: int, sesion: SesionDB, usuario: Editor):
     return _detalle_pagina(sesion, servicio.aceptar_sugerencias(sesion, usuario, id_))
