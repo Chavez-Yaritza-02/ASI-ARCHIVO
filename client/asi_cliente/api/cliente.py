@@ -137,6 +137,18 @@ class ClienteApi:
         self.usuario = None
         self._http.close()
 
+    @property
+    def url(self) -> str:
+        return str(self._http.base_url)
+
+    def identidad(self) -> dict:
+        """Cómo se presenta el servidor (sin sesión). Vacío si no responde."""
+        try:
+            r = self._http.get("/sistema/identidad")
+            return r.json() if r.status_code == 200 else {}
+        except (httpx.HTTPError, ValueError):
+            return {}
+
     def servidor_disponible(self) -> bool:
         try:
             return self._http.get("/salud").status_code == 200

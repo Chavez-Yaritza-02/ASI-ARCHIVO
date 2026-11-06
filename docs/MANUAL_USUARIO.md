@@ -45,6 +45,16 @@ evita escribir la contraseña cada día; no lo marques en computadoras compartid
 - ¿Olvidaste tu contraseña? Pide al administrador que la restablezca.
 - Para salir: **Cerrar sesión** (abajo a la izquierda).
 
+**Franja de arriba: a qué servidor estás conectada.** Siempre se ve, con su dirección:
+- Verde, **SERVIDOR INSTITUCIONAL · datos oficiales**: el sistema real de la Jefatura.
+- Naranja, **SERVIDOR DE DEMOSTRACIÓN**: para pruebas; no es el sistema oficial.
+- Morado, **SERVIDOR DE REVISIÓN · datos ficticios**: solo para revisar la aplicación.
+- Gris, **SERVIDOR SIN IDENTIFICAR**: confirma con el administrador antes de capturar.
+
+Lo que guardas queda solo en ese servidor. Si tienes cambios sin guardar (por ejemplo, una
+página de importación corregida), al cerrar la ventana o la sesión la aplicación avisa:
+**Volver y guardar** o **Salir sin guardar**.
+
 **El menú de la izquierda tiene seis secciones.** Cada una agrupa sus pantallas en
 pestañas en la parte de arriba:
 

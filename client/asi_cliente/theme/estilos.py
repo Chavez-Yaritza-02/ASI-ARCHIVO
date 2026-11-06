@@ -88,6 +88,17 @@ QFrame#aviso_error { background: $error_suave; border-radius: 8px; }
 QFrame#aviso_advertencia { background: $advertencia_suave; border-radius: 8px; }
 QFrame#aviso_error QLabel, QFrame#aviso_advertencia QLabel { background: transparent; }
 
+/* --- Franja del servidor: siempre visible, color según el tipo --- */
+QLabel#franja_servidor {
+    color: #ffffff; font-weight: 700; font-size: 13px; padding: 6px 16px;
+    letter-spacing: 0.3px;
+}
+QLabel#franja_servidor[tipo="institucional"] { background: #166534; }
+QLabel#franja_servidor[tipo="demostracion"] { background: #9a3412; }
+QLabel#franja_servidor[tipo="revision"] { background: #6d28d9; }
+QLabel#franja_servidor[tipo="desarrollo"] { background: #1e40af; }
+QLabel#franja_servidor[tipo="desconocido"] { background: #374151; }
+
 /* --- Barra superior y menú lateral --- */
 QWidget#barra_superior { background: $superficie; border-bottom: 1px solid $borde; }
 QWidget#barra_superior QLabel { background: transparent; }

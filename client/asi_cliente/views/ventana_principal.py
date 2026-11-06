@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTabWidget,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from asi_cliente.api.cliente import ClienteApi, ErrorApi, UsuarioSesion
+from asi_cliente.servidor import describir_servidor
 from asi_cliente.theme.iconos import icono
 from asi_cliente.views.asistencia_hora import VistaAsistenciaHora
 from asi_cliente.views.asistente_importacion import VistaAsistenteImportacion
@@ -187,6 +189,24 @@ def nombre_rol(usuario: UsuarioSesion) -> str:
     return ", ".join(r.capitalize() for r in usuario.roles) or "Sin rol"
 
 
+def confirmar_salida(padre, accion: str, cambios: list[str]) -> bool:
+    """Pregunta antes de perder cambios sin guardar. True = salir de todos modos."""
+    caja = QMessageBox(padre)
+    caja.setIcon(QMessageBox.Warning)
+    caja.setWindowTitle("Cambios sin guardar")
+    caja.setText(f"Hay cambios sin guardar. Si vas a {accion}, se perderán.")
+    caja.setInformativeText(
+        "Pendiente de guardar en:\n"
+        + "\n".join(f"• {c}" for c in cambios)
+        + "\n\nVuelve y pulsa «Guardar» en esa pantalla para conservarlos."
+    )
+    volver = caja.addButton("Volver y guardar", QMessageBox.RejectRole)
+    salir = caja.addButton("Salir sin guardar", QMessageBox.DestructiveRole)
+    caja.setDefaultButton(volver)
+    caja.exec()
+    return caja.clickedButton() is salir
+
+
 class Seccion(QWidget):
     """Una sección del menú: sus pantallas en pestañas, creadas al abrirlas."""
 
@@ -255,6 +275,22 @@ class VentanaPrincipal(QMainWindow):
         super().__init__()
         self.api, self.usuario = api, usuario
         self.setWindowTitle("ASI-ARCHIVO · Jefatura de Electromecánica")
+        # Franja con el servidor conectado: evita trabajar en uno creyendo que es otro.
+        self.franja_servidor = QLabel("", objectName="franja_servidor")
+        self.franja_servidor.setAlignment(Qt.AlignCenter)
+        self.franja_servidor.setAttribute(Qt.WA_StyledBackground)
+        self.franja_servidor.setAccessibleName("Servidor conectado")
+        self.servidor = None
+        if api is not None:
+            self.servidor = describir_servidor(api.url, api.identidad())
+            self.franja_servidor.setText(self.servidor.texto)
+            self.franja_servidor.setProperty("tipo", self.servidor.tipo)
+            self.franja_servidor.setToolTip(
+                f"Esta ventana trabaja con {api.url}. Lo que guardes queda en ese servidor."
+            )
+            self.setWindowTitle(f"ASI-ARCHIVO · {self.servidor.titulo} · {self.servidor.direccion}")
+        else:
+            self.franja_servidor.hide()
         self.resize(1280, 800)
         self.setMinimumSize(960, 620)
         self.compacto = False
@@ -309,7 +345,7 @@ class VentanaPrincipal(QMainWindow):
         self.boton_tema.setToolTip("Alternar entre tema claro y oscuro")
         self.boton_salir.setToolTip("Salir de tu cuenta en esta computadora")
         self.boton_tema.clicked.connect(self.cambiar_tema)
-        self.boton_salir.clicked.connect(self.cerrar_sesion)
+        self.boton_salir.clicked.connect(self.pedir_cerrar_sesion)
         caja_lateral.addWidget(self.usuario_lateral)
         for b in (self.boton_tema, self.boton_salir):
             fila = QHBoxLayout()
@@ -346,17 +382,55 @@ class VentanaPrincipal(QMainWindow):
         caja_derecha.addWidget(barra)
         caja_derecha.addWidget(self.paginas, 1)
 
-        central = QWidget()
-        caja = QHBoxLayout(central)
+        cuerpo = QWidget()
+        caja = QHBoxLayout(cuerpo)
         caja.setContentsMargins(0, 0, 0, 0)
         caja.setSpacing(0)
         caja.addWidget(self.lateral)
         caja.addWidget(derecha, 1)
+        central = QWidget()
+        caja_central = QVBoxLayout(central)
+        caja_central.setContentsMargins(0, 0, 0, 0)
+        caja_central.setSpacing(0)
+        caja_central.addWidget(self.franja_servidor)
+        caja_central.addWidget(cuerpo, 1)
         self.setCentralWidget(central)
 
         self.actualizar_periodo()
         self.menu.setCurrentRow(0)
         self.menu.setFocus()
+
+    # --- cambios sin guardar ------------------------------------------------------
+
+    def cambios_sin_guardar(self) -> list[str]:
+        """Pantallas abiertas con cambios que aún no se guardan en el servidor."""
+        nombres = {
+            "VistaImportacion": "Importar horarios: revisión de una página",
+            "VistaHorarios": "Horarios: borrador en edición",
+        }
+        return sorted(
+            {
+                nombres.get(type(w).__name__, type(w).__name__)
+                for w in self.findChildren(QWidget)
+                if getattr(w, "cambios_pendientes", False) is True
+            }
+        )
+
+    def puede_cerrar(self, accion: str) -> bool:
+        cambios = self.cambios_sin_guardar()
+        if not cambios:
+            return True
+        return confirmar_salida(self, accion, cambios)
+
+    def pedir_cerrar_sesion(self) -> None:
+        if self.puede_cerrar("cerrar sesión"):
+            self.cerrar_sesion.emit()
+
+    def closeEvent(self, evento) -> None:  # noqa: N802 (nombre de Qt)
+        if self.puede_cerrar("cerrar la ventana"):
+            evento.accept()
+        else:
+            evento.ignore()
 
     # --- navegación ---------------------------------------------------------------
 
