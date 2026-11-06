@@ -1,106 +1,148 @@
-# Diseño: reabrir excepcionalmente un periodo cerrado
+# Diseño técnico: reabrir excepcionalmente un periodo cerrado (fase 2)
 
-Estado: **propuesta para revisión**. No hay código ni cambios en la base de datos.
+Estado: **diseño técnico para aprobación**. La migración está como **borrador** en
+[docs/fase2/f2r001_reapertura_periodo.py](fase2/f2r001_reapertura_periodo.py), fuera de la
+carpeta de migraciones: no se ha ejecutado en ninguna base.
 
-## 1. Para qué sirve
+Decisión de la Jefatura: se elige la **fase 2**. Debe permitir corregir horarios de
+semestres anteriores **sin suspender** el registro de asistencias del semestre actual.
+(La fase 1 —intercambio de periodos con pausa del semestre— queda descartada.)
 
-Al cambiar de semestre, el periodo anterior se **cierra**: sus horarios, asistencias e
-importaciones quedan de solo lectura y se conservan como historial. Excepcionalmente
-puede hacer falta corregir algo de un periodo cerrado, por ejemplo:
+---
 
-- Un justificante que llegó tarde y hay que registrar en una falta de noviembre.
-- Una asistencia mal capturada que se descubre al revisar los reportes del semestre.
+## 1. Objetivo y reglas
 
-Reabrir debe ser **raro, explícito, temporal y auditado**, y **nunca** debe cambiar por sí
-solo las asistencias ya registradas.
+- Un administrador puede **abrir para corrección** un periodo cerrado, con **motivo**,
+  **confirmación** y **plazo** (máximo 30 días).
+- El periodo activo **sigue activo**: la asistencia de hoy se registra normalmente.
+- Mientras la reapertura esté vigente, en el periodo reabierto se puede: crear y confirmar
+  versiones de horario, importar horarios y corregir asistencias, cada acción con su
+  auditoría y sus reglas de siempre.
+- La reapertura **termina** al pulsar «Terminar corrección» o **automáticamente** al vencer
+  el plazo. No hace falta ningún proceso programado: el sistema compara la fecha al consultar.
+- **Nada se recalcula ni se modifica solo.** Las asistencias registradas guardan su propia
+  copia de docente, horario, bloque, materia y minutos; reabrir no las toca.
+- Todo queda en el historial: quién abrió, por qué, hasta cuándo, quién cerró y cómo.
 
-## 2. Lo que hoy impone el sistema (sin cambiar la base de datos)
+## 2. Por qué una tabla nueva y no un estado nuevo
 
-| Regla actual | Efecto en el diseño |
+| Opción | Efecto | Decisión |
+|---|---|---|
+| Agregar el estado `reabierto` a `periodo` | Hay que cambiar la restricción de estados y revisar el índice de «un solo activo» y todas las consultas que filtran por estado | Descartada |
+| **Tabla `reapertura_periodo`** | Cambio 100 % aditivo; `periodo` no cambia; cada reapertura queda como historial propio | **Elegida** |
+
+El periodo reabierto **sigue con estado `cerrado`**. Lo que cambia es la regla de escritura:
+«cerrado» deja de significar «siempre de solo lectura» y pasa a significar «de solo lectura,
+salvo que tenga una reapertura vigente».
+
+## 3. Migración propuesta (`f2r001`, después de `e6a001`)
+
+Ver el borrador: [docs/fase2/f2r001_reapertura_periodo.py](fase2/f2r001_reapertura_periodo.py).
+
+| Elemento | Detalle |
 |---|---|
-| Estados posibles: `borrador`, `activo`, `cerrado` (restricción de la base) | No existe un estado «reabierto»; crearlo exige una migración |
-| Solo **un** periodo puede estar `activo` (índice único en la base) | Un periodo cerrado no puede estar abierto al mismo tiempo que el semestre en curso |
-| Un periodo `borrador` no se toma en cuenta para la bitácora | Reabrir como borrador ocultaría el historial: **descartado** |
-| Cerrado bloquea registrar y corregir asistencia, crear horarios e importar | Consultas y reportes siempre funcionan |
-| Cada asistencia guarda una copia del docente, horario, bloque, materia y minutos | Reabrir no recalcula nada: las asistencias registradas no cambian |
-| Toda acción sobre periodos se guarda en la auditoría (antes, después, usuario y fecha) | La reapertura y el nuevo cierre quedan registrados sin cambios en la base |
+| Tabla `reapertura_periodo` | `periodo_id`, `motivo` (≥ 15 caracteres), `abierta_por_id`, `abierta_en`, `vence_en` (≤ 30 días), `cerrada_por_id`, `cerrada_en`, `motivo_cierre` |
+| Índice único parcial | Una sola reapertura sin cerrar por periodo |
+| Disparador `trg_reapertura_inmutable` | Prohíbe borrar; solo deja registrar el cierre, una vez |
+| Permisos (`servidor/db/permisos.sql`) | Añadir `REVOKE DELETE ON reapertura_periodo FROM asi_app;` |
+| Reversión (`downgrade`) | Solo para la base de pruebas; en producción no se revierte |
 
-## 3. Propuesta
+No borra, no renombra y no modifica datos existentes. El vencimiento automático se registra
+al primer acceso posterior al plazo (`cerrada_por_id` = quien consultó, `motivo_cierre` =
+«Venció el plazo»), para que el historial siempre diga cómo terminó.
 
-### Fase 1 — sin cambios en la base de datos (se puede hacer ya, si se autoriza)
+## 4. Cambios en el servidor (cuando se autorice)
 
-**«Abrir un periodo anterior para corrección»**, en Administración › Periodos, solo para
-quien tiene el permiso `periodos.gestionar` (el administrador).
+1. **Modelo** `ReaperturaPeriodo` en `app/models/horarios.py`.
+2. **Servicio** `app/services/periodos.py`:
+   - `reabrir(periodo_id, motivo, dias)`: solo periodos `cerrado`, sin reapertura vigente;
+     audita `reabrir`.
+   - `terminar_reapertura(periodo_id, motivo)`: audita `terminar_reapertura`.
+   - `reapertura_vigente(periodo)`: devuelve la vigente y cierra las vencidas.
+   - `admite_cambios(periodo)`: `activo` o (`cerrado` con reapertura vigente).
+3. **Una sola regla de escritura.** Hoy hay tres comprobaciones separadas de «periodo
+   cerrado» (`horarios._exigir_periodo_abierto`, `bitacora._exigir_periodo_abierto`,
+   `importacion` al subir). Las tres pasan a usar `admite_cambios`, así no queda un camino
+   que se salte la regla.
+4. **Endpoints** (permiso `periodos.gestionar`):
+   - `POST /periodos/{id}/reabrir` · `{motivo, dias}`
+   - `POST /periodos/{id}/terminar-reapertura` · `{motivo}`
+   - `GET /periodos/reaperturas` (lectura, permiso `horarios.ver`): historial.
+   - `PeriodoSalida` agrega `reapertura: {vence_en, motivo, abierta_por} | null`.
+5. **Impacto antes de confirmar un horario** en un periodo reabierto:
+   `GET /horarios/{id}/impacto` (solo lectura) devuelve, para las fechas desde la vigencia:
+   horas nuevas que quedarían pendientes y asistencias ya registradas cuyo bloque deja de
+   estar programado (pasarían a «Capturas fuera del programa actual»; **no se borran ni se
+   cambian**). La confirmación exige una fecha de vigencia explícita y aceptar ese impacto.
+6. **Esquema esperado**: `app/api/sistema.py` y `tests/test_integridad.py` pasan de
+   `e6a001` a `f2r001`.
 
-Por la regla de «un solo periodo activo», la reapertura es un **intercambio guiado**:
+## 5. Cambios en la interfaz
 
-1. El administrador elige el periodo cerrado y escribe el **motivo** (obligatorio, mínimo
-   15 caracteres; por ejemplo «Registrar justificante oficio 123 del 12/11/2026»).
-2. La aplicación muestra un aviso claro:
-   - Mientras dure la corrección, **el semestre actual queda en pausa**: no se podrá
-     registrar asistencia de hoy ni importar horarios del semestre actual.
-   - Las asistencias ya registradas **no cambian**; solo se podrán corregir una por una,
-     cada corrección con su propio motivo (como hoy).
-   - Se recomienda hacerlo fuera del horario de captura.
-3. Confirmación reforzada: escribir el nombre del periodo (p. ej. `AGOSTO - DICIEMBRE 2026`).
-4. El servidor, en **una sola operación** (todo o nada):
-   - pone el periodo actual de `activo` a `cerrado`;
-   - pone el periodo anterior de `cerrado` a `activo`;
-   - guarda en la auditoría la acción `reabrir`, con el motivo, el periodo pausado y el usuario.
-5. En la barra superior aparece un aviso permanente en color de advertencia:
-   «**Corrigiendo AGOSTO - DICIEMBRE 2026** — semestre actual en pausa ·
-   [Terminar corrección]».
-6. **Terminar corrección** hace el intercambio inverso en una sola operación y lo audita como
-   `terminar_reapertura`. El aviso desaparece.
+- **Administración › Periodos:** en un periodo cerrado, botón **«Abrir para corrección…»**:
+  motivo, plazo (1 a 30 días, sugerido 7) y confirmación escribiendo el nombre del periodo.
+- **Barra superior:** junto al periodo activo, un aviso **«Corrigiendo AGOSTO - DICIEMBRE
+  2026 · vence el 12/12/2026»**, con el botón **«Terminar corrección»** (solo administrador).
+- **Horarios › Por docente** e **Importar horarios:** el periodo reabierto aparece como
+  «(abierto para corrección)» y se puede elegir; al confirmar se muestra el impacto.
+- **Registro de cambios:** reaperturas y cierres con motivo, usuario y fecha.
+- **Rol consulta:** ve el aviso y el historial, sin botones.
 
-Por qué se puede hacer sin migraciones: solo usa los tres estados existentes, respeta el
-índice de «un solo activo» y la auditoría ya guarda antes, después y motivo en formato
-libre. El servicio sabe que hay una reapertura en curso consultando la última acción
-`reabrir` sin su `terminar_reapertura` correspondiente.
+## 6. Riesgos y cómo se controlan
 
-**Protecciones:**
+| Riesgo | Control |
+|---|---|
+| Cambiar un horario pasado altera la programación de fechas ya cerradas | Vigencia explícita obligatoria; vista previa de impacto; las asistencias registradas no cambian (son copias) y las que dejan de estar programadas se muestran aparte |
+| Olvidar cerrar la reapertura | Plazo obligatorio (≤ 30 días) y cierre automático al vencer; aviso permanente en la barra superior |
+| Abuso o cambios sin control | Solo `periodos.gestionar`; motivo obligatorio; auditoría y tabla inmutable |
+| Dos reaperturas simultáneas del mismo periodo | Índice único parcial en la base |
+| Un camino del código que siga bloqueando o permitiendo de más | Una única función `admite_cambios` usada por los tres servicios; pruebas por cada camino |
+| Clientes Windows con versión anterior | El servidor rechaza escrituras igual que hoy; los clientes viejos solo no ven el aviso. Se publica un instalador nuevo junto con la migración |
+| Migración en el servidor real | Solo aditiva; antes, `./asi.sh respaldar` y `./asi.sh verificar`; se ensaya completa en la base de pruebas y en la demostración ficticia |
+| Reportes de un semestre corregido | Se generan con los datos vigentes al momento; el historial de cambios explica cualquier diferencia con un reporte anterior |
 
-- No se puede reabrir si ya hay otra reapertura en curso.
-- No se puede reabrir un periodo que nunca estuvo activo.
-- No se recalculan asistencias, minutos ni reportes. Los reportes del periodo reabierto
-  reflejan solo las correcciones que el administrador haga a mano.
-- Crear o confirmar horarios en un periodo reabierto pide además una **fecha de vigencia
-  explícita**, para que las fechas ya registradas sigan usando la versión que tenían.
-- Si la aplicación se cierra sin terminar, el aviso reaparece al entrar (el estado vive en
-  el servidor, no en la computadora).
+## 7. Pruebas previstas (todas con datos ficticios, solo en `asi_archivo_pytest`)
 
-**Limitación de la fase 1:** mientras dura la corrección, el semestre en curso no admite
-capturas. Para correcciones cortas (minutos) es aceptable; para correcciones largas no.
+**Migración**
+- `upgrade` y `downgrade` en una base vacía y en una con datos ficticios; los conteos de
+  todas las tablas existentes no cambian.
+- El disparador impide borrar y modificar una reapertura, y permite cerrarla una sola vez.
+- El índice impide dos reaperturas abiertas del mismo periodo.
 
-### Fase 2 — con cambio en la base de datos (solo con autorización posterior)
+**Servicio y API**
+- Reabrir exige motivo (≥ 15), plazo válido, periodo cerrado y permiso (403 para consulta).
+- Con la reapertura vigente: se crea y confirma un horario del periodo anterior **y**, en la
+  misma prueba, se registra asistencia de hoy en el periodo activo.
+- Al vencer el plazo: escribir en el periodo reabierto vuelve a dar 409 y el historial
+  muestra «Venció el plazo».
+- Terminar manualmente: igual que vencer, con el motivo del usuario.
+- Las asistencias registradas antes de reabrir conservan sus valores exactos después de
+  confirmar un horario nuevo (comparación campo por campo).
+- `/horarios/{id}/impacto` cuenta bien las horas nuevas pendientes y las capturas que
+  quedan fuera del programa.
+- Las tres rutas de escritura (horarios, bitácora, importación) respetan la misma regla.
 
-Agregar un estado `reabierto` (o una marca «reabierto hasta») que **conviva** con el
-periodo activo, con fecha límite y cierre automático al vencer. Así el semestre en curso
-sigue funcionando mientras se corrige el anterior. Requiere:
+**Interfaz**
+- El botón solo aparece en periodos cerrados y para el administrador.
+- El aviso de la barra superior aparece y desaparece; el rol de consulta lo ve sin botones.
+- El asistente de importación permite elegir el periodo reabierto.
 
-- una migración compatible (ampliar la restricción de estados; no borra ni modifica datos);
-- probarla solo en la base de pruebas, como se hizo con las demás.
+**Instalación**
+- Validación del servidor en GitHub (`validar-servidor.sh`) con la migración aplicada.
+- Respaldo antes y restauración después, comprobando el historial de reaperturas.
 
-## 4. Lo que verá el usuario
+## 8. Plan de implementación (cuando se autorice)
 
-- **Administración › Periodos:** en un periodo cerrado, el botón «Abrir para corrección…».
-- **Barra superior:** el aviso de corrección en curso, con su botón para terminar.
-- **Registro de cambios:** las reaperturas aparecen con su motivo, usuario y fecha.
-- **Rol de consulta:** no ve los botones; sí ve el aviso, para saber que hay una
-  corrección en curso.
+1. Rama nueva desde `entrega-v1` (después de los PR #9 y #10).
+2. Copiar el borrador a `server/migrations/versions/` y probarlo **solo** en la base de pruebas.
+3. Servicio, endpoints y regla única `admite_cambios`, con sus pruebas.
+4. Interfaz (Periodos, barra superior, impacto al confirmar).
+5. Revisión visual y PR sin merge.
+6. Aplicación en el servidor real solo con autorización de TI y de la Jefatura, después de
+   respaldar y verificar.
 
-## 5. Pruebas previstas
+## 9. Decisiones pendientes
 
-- Reabrir pide motivo y confirmación; queda auditado con usuario, motivo y periodo pausado.
-- Intercambio atómico: si falla una parte, no cambia nada.
-- Las asistencias registradas antes de reabrir conservan sus valores después de reabrir y
-  después de terminar.
-- No se puede reabrir dos veces a la vez, ni desde el rol de consulta (403).
-- Terminar restaura exactamente el periodo que estaba activo.
-- La interfaz muestra y oculta el aviso de la barra superior.
-
-## 6. Decisión que necesitamos
-
-1. ¿Se autoriza la **fase 1** (sin migraciones), aceptando que el semestre actual queda en
-   pausa durante la corrección?
-2. ¿O se prefiere esperar a la **fase 2**, que necesita una migración autorizada?
+1. ¿El plazo máximo de 30 días y el sugerido de 7 están bien?
+2. ¿Corregir **asistencias** del periodo reabierto también se permite, o solo horarios?
+   (El diseño lo permite; puede limitarse a horarios sin cambiar la migración.)
