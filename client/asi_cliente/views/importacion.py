@@ -14,9 +14,10 @@
 import copy
 import re
 import unicodedata
+import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -41,9 +43,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from asi_cliente import visor_pdf
 from asi_cliente.api.cliente import ClienteApi, ErrorApi, UsuarioSesion
 from asi_cliente.cuadricula import DIAS, HORAS, TITULOS_DIAS, mostrar_primera_clase
-from asi_cliente.views.comunes import Columna, Tabla, confirmar, encabezado, mostrar_error
+from asi_cliente.views.comunes import confirmar, encabezado, mostrar_error
 
 RESUELTOS = ("coincide", "confirmado")
 COLORES = {  # fondo de la celda según su estado
@@ -404,6 +407,60 @@ class DialogoCeldaImportada(QDialog):
         self.accept()
 
 
+def nombre_pagina(p: dict) -> str:
+    """Nombre completo de una página: docente, documento, página, estado y pendientes."""
+    docente = (p.get("docente") or {}).get("nombre") or p.get("docente_texto") or ""
+    documento = Path(p["documento"]).stem
+    partes = [docente or documento]
+    if docente and normal(docente) != normal(documento):
+        partes.append(documento)
+    partes.append(f"página {p['numero']}")
+    partes.append(NOMBRES_ESTADO_PAGINA.get(p["estado"], p["estado"]))
+    if p.get("pendientes"):
+        partes.append(f"{p['pendientes']} pendientes")
+    return " · ".join(partes)
+
+
+class SelectorPaginas(QComboBox):
+    """Lista desplegable de páginas con su nombre completo (reemplaza a la columna angosta)."""
+
+    itemSelectionChanged = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.filas: list[dict] = []
+        self.mensaje_vacio = ""
+        self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(40)
+        self.setAccessibleName("Página a revisar")
+        self.currentIndexChanged.connect(lambda _i: self.itemSelectionChanged.emit())
+
+    def cargar(self, filas: list[dict]) -> None:
+        bloqueado = self.blockSignals(True)
+        self.clear()
+        self.filas = list(filas)
+        for i, p in enumerate(self.filas):
+            self.addItem(nombre_pagina(p), p["id"])
+            self.setItemData(i, nombre_pagina(p), Qt.ToolTipRole)
+            color = COLORES_ESTADO_PAGINA.get(p["estado"])
+            if color:
+                self.setItemData(i, QColor(color), Qt.ForegroundRole)
+        self.setPlaceholderText(self.mensaje_vacio or "Sin páginas")
+        self.setCurrentIndex(-1 if not self.filas else 0)
+        self.setEnabled(bool(self.filas))
+        self.blockSignals(bloqueado)
+
+    def rowCount(self) -> int:  # noqa: N802 (igual que la tabla anterior)
+        return self.count()
+
+    def seleccionar_id(self, id_: int) -> None:
+        self.setCurrentIndex(max(self.findData(id_), 0))
+
+    def seleccionado(self) -> dict | None:
+        i = self.currentIndex()
+        return self.filas[i] if 0 <= i < len(self.filas) else None
+
+
 def importacion_original(documento: dict) -> int | None:
     """Importación donde se leyó un PDF repetido.
 
@@ -459,21 +516,16 @@ class VistaImportacion(QWidget):
         barra.addWidget(self.avance)
         barra.addWidget(self.boton_cancelar)
 
-        # --- páginas ---
-        self.paginas = Tabla(
-            [
-                Columna("Documento", lambda p: f"{Path(p['documento']).stem} · p{p['numero']}"),
-                Columna("Estado", lambda p: NOMBRES_ESTADO_PAGINA.get(p["estado"], p["estado"])),
-                Columna("Pend.", lambda p: p["pendientes"] or ""),
-            ]
-        )
-        cabecera = self.paginas.horizontalHeader()
-        cabecera.setSectionResizeMode(0, QHeaderView.Stretch)
-        for col in (1, 2):
-            cabecera.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        # --- páginas: selector con nombres completos ---
+        self.paginas = SelectorPaginas()
+        # Versión, fecha y horas del documento (el nombre y el estado ya están en el selector).
+        self.titulo_pagina = QLabel("", objectName="suave")
+        fila_pagina = QHBoxLayout()
+        fila_pagina.addWidget(QLabel("Página"))
+        fila_pagina.addWidget(self.paginas, 1)
+        fila_pagina.addWidget(self.titulo_pagina)
 
         # --- revisión ---
-        self.titulo_pagina = QLabel("", objectName="estado", wordWrap=True)
         self.docente = _combo_buscable(320)
         self.estado_docente = QLabel("", objectName="suave")
         self.boton_nuevo_docente = QPushButton("Crear docente con el nombre leído")
@@ -502,15 +554,33 @@ class VistaImportacion(QWidget):
         self.cuadricula.setVerticalHeaderLabels([f"{h:02d}:00" for h in HORAS])
         self.cuadricula.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.cuadricula.verticalHeader().setDefaultSectionSize(40)
-        self.cuadricula.verticalHeader().setMinimumSectionSize(40)
+        self.cuadricula.verticalHeader().setMinimumSectionSize(24)
         self.cuadricula.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # Leyenda compacta: una línea con los colores; la explicación completa al pasar el ratón.
+        muestra = "<span style='background:{};color:#1f2937'>&nbsp;{}&nbsp;</span>"
         leyenda = QLabel(
-            "Colores: verde = listo · azul = coincide exactamente, falta aceptarla · "
-            "amarillo = parecido, confírmalo con doble clic · rojo = falta elegir · "
-            "morado = grupo pendiente de validar (solo letra). Doble clic para revisar una celda.",
+            "Colores: "
+            + " ".join(
+                muestra.format(COLORES[clave], texto)
+                for clave, texto in (
+                    ("ok", "listo"),
+                    ("exacta", "exacta"),
+                    ("sugerido", "parecida"),
+                    ("falta", "falta"),
+                    ("grupo", "solo letra"),
+                )
+            ),
             objectName="suave",
-            wordWrap=True,
         )
+        leyenda.setToolTip(
+            "Verde = listo · azul = coincide exactamente, falta aceptarla · amarillo = parecido, "
+            "confírmalo con doble clic · rojo = falta elegir · morado = grupo pendiente de "
+            "validar (solo letra). Doble clic en una celda para revisarla."
+        )
+        self.leyenda = leyenda
+        # En ventanas angostas cede espacio a los botones (la explicación sigue en la ayuda).
+        leyenda.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        leyenda.setMinimumWidth(60)
         self.boton_sugerencias = QPushButton("Aceptar coincidencias exactas")
         self.boton_sugerencias.setToolTip(
             "Acepta solo lo que coincide exactamente con los catálogos. Lo parecido (amarillo) "
@@ -522,60 +592,77 @@ class VistaImportacion(QWidget):
         self.boton_descartar = QPushButton("Descartar página")
         self.boton_restaurar = QPushButton("Restaurar")
         self.boton_aprobar = QPushButton("Aprobar: crear borrador", objectName="primario")
-        acciones = QHBoxLayout()
-        acciones.addWidget(self.boton_sugerencias)
-        acciones.addWidget(self.boton_deshacer)
-        acciones.addStretch()
+        self.boton_pendientes = QPushButton("Pendientes")
+        self.boton_pendientes.setCheckable(True)
+        self.boton_pendientes.setChecked(True)
+        self.boton_pendientes.setToolTip("Muestra u oculta la lista de pendientes")
+        self.boton_ampliar = QPushButton("Ampliar")
+        self.boton_ampliar.setToolTip("Revisión en pantalla completa (Esc para salir)")
+        self.boton_pdf = QPushButton("Ver PDF original")
+        self.boton_pdf.setToolTip(
+            "Abre la página del documento que tienes en tu computadora (PDF o ZIP importado). "
+            "No se sube a ningún servidor."
+        )
+        # Dos filas: herramientas de revisión arriba, decisiones sobre la página abajo.
+        herramientas = QHBoxLayout()
+        for b in (self.boton_sugerencias, self.boton_deshacer, self.boton_pendientes):
+            herramientas.addWidget(b)
+        herramientas.addStretch()
+        herramientas.addWidget(self.boton_ampliar)
+        herramientas.addWidget(self.boton_pdf)
+        decisiones = QHBoxLayout()
+        decisiones.addWidget(leyenda)
+        decisiones.addStretch()
         for b in (
             self.boton_descartar,
             self.boton_restaurar,
             self.boton_guardar,
             self.boton_aprobar,
         ):
-            acciones.addWidget(b)
+            decisiones.addWidget(b)
+        for b in self.findChildren(QPushButton):
+            # El texto de un botón nunca se recorta: no se encoge por debajo de su tamaño.
+            b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
 
-        panel = QWidget()
-        capa_p = QVBoxLayout(panel)
-        capa_p.setContentsMargins(8, 0, 0, 0)
-        for w in (self.titulo_pagina,):
-            capa_p.addWidget(w)
+        self.panel = QWidget()
+        capa_p = QVBoxLayout(self.panel)
+        capa_p.setContentsMargins(0, 0, 0, 0)
         capa_p.addLayout(fila_docente)
         capa_p.addWidget(self.estado_docente)
         capa_p.addWidget(self.avisos)
-        columna_pendientes = QWidget()
-        capa_pend = QVBoxLayout(columna_pendientes)
+        self.columna_pendientes = QWidget()
+        capa_pend = QVBoxLayout(self.columna_pendientes)
         capa_pend.setContentsMargins(0, 0, 0, 0)
         capa_pend.addWidget(self.lista_pendientes)
         capa_pend.addWidget(self.arbol_pendientes, 1)
         self.divisor_revision = QSplitter()
         self.divisor_revision.addWidget(self.cuadricula)
-        self.divisor_revision.addWidget(columna_pendientes)
+        self.divisor_revision.addWidget(self.columna_pendientes)
         self.divisor_revision.setStretchFactor(0, 1)
-        self.divisor_revision.setSizes([640, 340])
+        self.divisor_revision.setStretchFactor(1, 0)
+        self.divisor_revision.setSizes([900, 320])
         capa_p.addWidget(self.divisor_revision, 1)
-        capa_p.addWidget(leyenda)
-        capa_p.addLayout(acciones)
+        capa_p.addLayout(herramientas)
+        capa_p.addLayout(decisiones)
 
-        divisor = QSplitter()
-        divisor.addWidget(self.paginas)
-        divisor.addWidget(panel)
-        divisor.setSizes([330, 950])
-
-        capa = QVBoxLayout(self)
-        capa.setContentsMargins(32, 28, 32, 28)
-        capa.addWidget(
+        self.capa = QVBoxLayout(self)
+        self.capa.setContentsMargins(32, 28, 32, 28)
+        self.capa.addWidget(
             encabezado(
                 "Importar horarios",
                 "Sube un ZIP o PDF de horarios. Nada se guarda como horario hasta que revises y "
                 "apruebes cada página; al aprobar se crea un borrador que se confirma en Horarios.",
             )
         )
-        capa.addLayout(barra)
+        self.capa.addLayout(barra)
         fila_aviso = QHBoxLayout()
         fila_aviso.addWidget(self.aviso_lote, 1)
         fila_aviso.addWidget(self.boton_original)
-        capa.addLayout(fila_aviso)
-        capa.addWidget(divisor, 1)
+        self.capa.addLayout(fila_aviso)
+        self.capa.addLayout(fila_pagina)
+        self.capa.addWidget(self.panel, 1)
+        self._ampliado: QDialog | None = None
+        self.pendientes_ocultos = False
 
         self.boton_importar.clicked.connect(self.importar)
         self.lotes.activated.connect(lambda *_: self.cargar_importacion())
@@ -595,6 +682,9 @@ class VistaImportacion(QWidget):
         self.boton_descartar.clicked.connect(lambda: self._accion_pagina("descartar"))
         self.boton_restaurar.clicked.connect(lambda: self._accion_pagina("restaurar"))
         self.boton_aprobar.clicked.connect(self.aprobar)
+        self.boton_pendientes.toggled.connect(self._alternar_pendientes)
+        self.boton_ampliar.clicked.connect(self.ampliar)
+        self.boton_pdf.clicked.connect(self.ver_pdf)
         self.recargar()
 
     def modo_asistente(self) -> None:
@@ -670,10 +760,6 @@ class VistaImportacion(QWidget):
         filas = [p for d in self.importacion["documentos"] for p in d["paginas"]]
         self._explicar_lote(filas)
         self.paginas.cargar(filas)
-        for i, p in enumerate(filas):
-            self.paginas.item(i, 1).setForeground(
-                QColor(COLORES_ESTADO_PAGINA.get(p["estado"], "#6b7280"))
-            )
         objetivo = seleccionar_pagina or next(
             (p["id"] for p in filas if p["estado"] == "por_revisar"),
             filas[0]["id"] if filas else None,
@@ -720,6 +806,7 @@ class VistaImportacion(QWidget):
             if textos
             else "Las páginas aparecerán aquí cuando termine la lectura."
         )
+        self.paginas.setPlaceholderText(self.paginas.mensaje_vacio)
 
     def abrir_original(self) -> None:
         if self.importacion_original is not None:
@@ -799,10 +886,7 @@ class VistaImportacion(QWidget):
             return
         self.celdas = {(c["dia"], c["hora"]): dict(c) for c in pagina["celdas_detalle"]}
         self._cargar_sugerencias()
-        partes = [
-            f"{Path(pagina['documento']).stem}, página {pagina['numero']}",
-            NOMBRES_ESTADO_PAGINA.get(pagina["estado"], pagina["estado"]),
-        ]
+        partes = []
         if pagina["version_documento"]:
             partes.append(f"versión {pagina['version_documento']} del {pagina['fecha_documento']}")
         if pagina["horas_qr"] is not None:
@@ -931,6 +1015,7 @@ class VistaImportacion(QWidget):
         self.arbol_pendientes.clear()
         if not self.pagina or not self._editable():
             self.lista_pendientes.setText("")
+            self._mostrar_columna_pendientes(0)  # página aprobada o descartada: nada pendiente
             self.arbol_pendientes.blockSignals(False)
             return
         grupos = self._pendientes_por_tipo()
@@ -940,6 +1025,7 @@ class VistaImportacion(QWidget):
             self.arbol_pendientes.addTopLevelItem(
                 QTreeWidgetItem(["La página no tiene actividades: captúralas a mano"])
             )
+        self._mostrar_columna_pendientes(total)
         resumen = " · ".join(
             f"{tipo}\u00a0{len(v)}" for tipo, v in grupos.items() if v or tipo != "Docente"
         )
@@ -964,6 +1050,87 @@ class VistaImportacion(QWidget):
             self.arbol_pendientes.addTopLevelItem(raiz)
             raiz.setExpanded(True)
         self.arbol_pendientes.blockSignals(False)
+
+    def _mostrar_columna_pendientes(self, total: int) -> None:
+        """La lista de pendientes solo aparece si hay pendientes; el usuario puede ocultarla."""
+        self.boton_pendientes.setEnabled(total > 0)
+        self.boton_pendientes.setText(f"Pendientes ({total})" if total else "Sin pendientes")
+        bloqueado = self.boton_pendientes.blockSignals(True)
+        self.boton_pendientes.setChecked(total > 0 and not self.pendientes_ocultos)
+        self.boton_pendientes.blockSignals(bloqueado)
+        self.columna_pendientes.setVisible(total > 0 and not self.pendientes_ocultos)
+
+    def _alternar_pendientes(self, visible: bool) -> None:
+        self.pendientes_ocultos = not visible
+        self.columna_pendientes.setVisible(visible)
+
+    def ampliar(self) -> None:
+        """Pantalla completa con la revisión; Esc o «Salir de pantalla completa» vuelve."""
+        if self._ampliado is not None:
+            self._ampliado.close()
+            return
+        dialogo = QDialog(self.window())
+        dialogo.setWindowTitle("Revisión ampliada · ASI-ARCHIVO")
+        capa = QVBoxLayout(dialogo)
+        capa.setContentsMargins(16, 0, 16, 12)
+        franja = getattr(self.window(), "franja_servidor", None)
+        if franja is not None and franja.text():
+            copia = QLabel(franja.text(), objectName="franja_servidor")
+            copia.setProperty("tipo", franja.property("tipo"))
+            copia.setAlignment(Qt.AlignCenter)
+            capa.addWidget(copia)  # también aquí se ve a qué servidor está conectada
+        indice = self.capa.indexOf(self.panel)
+        self.capa.removeWidget(self.panel)
+        capa.addWidget(self.panel, 1)
+        self.panel.show()
+        self.boton_ampliar.setText("Salir de pantalla completa")
+
+        def volver(*_args):
+            capa.removeWidget(self.panel)
+            self.capa.insertWidget(indice, self.panel, 1)
+            self.panel.show()
+            self.boton_ampliar.setText("Ampliar")
+            self._ampliado = None
+
+        dialogo.finished.connect(volver)
+        self._ampliado = dialogo
+        dialogo.showFullScreen()
+
+    def ver_pdf(self) -> None:
+        """Muestra la página en el PDF original que el usuario tiene en su computadora."""
+        if not self.pagina:
+            return
+        sha = self.pagina.get("documento_sha256")
+        nombre = self.pagina["documento"]
+        ruta = visor_pdf.ruta_conocida(sha, nombre)
+        while True:
+            if ruta is None:
+                archivo = self.pagina.get("archivo_importado") or nombre
+                elegida, _ = QFileDialog.getOpenFileName(
+                    self,
+                    f"¿Dónde está «{archivo}»? (el PDF o ZIP que se importó)",
+                    str(Path.home()),
+                    "PDF o ZIP (*.pdf *.zip)",
+                )
+                if not elegida:
+                    return
+                ruta = Path(elegida)
+            try:
+                contenido, verificado = visor_pdf.buscar_pdf(ruta, sha, nombre)
+                break
+            except (visor_pdf.ArchivoNoCoincide, OSError, zipfile.BadZipFile) as error:
+                mostrar_error(self, ErrorApi(str(error)))
+                ruta = None
+        visor_pdf.recordar(ruta)
+        visor = visor_pdf.VisorPdf(
+            contenido,
+            f"{Path(nombre).stem}, página {self.pagina['numero']}",
+            self.pagina["numero"],
+            verificado,
+            self,
+        )
+        visor.show()
+        self.visor = visor
 
     def _ir_a_pendiente(self, item, *_args) -> None:
         """Señala en la cuadrícula la celda del pendiente elegido."""
@@ -1021,10 +1188,9 @@ class VistaImportacion(QWidget):
             item.setForeground(QColor("#1f2937"))
             item.setToolTip(f"Leído: {c['texto_ocr']}" if c["texto_ocr"] else "Capturada a mano")
             self.cuadricula.setItem(HORAS.index(hora), DIAS.index(dia), item)
-        # Filas a la altura de su contenido: ninguna clase queda cortada.
-        self.cuadricula.resizeRowsToContents()
         self._actualizar_pendientes()
-        mostrar_primera_clase(self.cuadricula, [h for _d, h in self.celdas])
+        # Filas a la altura de su contenido y, si cabe, todo el horario sin desplazarse.
+        mostrar_primera_clase(self.cuadricula, [h for _d, h in self.celdas], ajustar=True)
 
     def _actualizar_botones(self) -> None:
         editable = self._editable()
@@ -1034,6 +1200,8 @@ class VistaImportacion(QWidget):
         self.boton_sugerencias.setEnabled(bool(hay_exactas))
         self.boton_confirmar_docente.setVisible(editable and self._docente_por_confirmar())
         self.boton_deshacer.setEnabled(editable and bool(self.historial))
+        self.boton_pdf.setEnabled(self.pagina is not None)
+        self.boton_ampliar.setEnabled(self.pagina is not None)
         self.boton_guardar.setEnabled(editable and self.cambios_pendientes)
         self.boton_aprobar.setEnabled(editable)
         self.boton_descartar.setEnabled(editable)
@@ -1380,6 +1548,7 @@ class VistaImportacion(QWidget):
 
     def importar_archivo(self, ruta: Path, periodo_id: int) -> None:
         """Sube el archivo. El original no se modifica: solo se lee."""
+        visor_pdf.recordar(ruta)
         try:
             lote = self.api.subir(
                 "/importaciones", ruta.name, ruta.read_bytes(), {"periodo_id": str(periodo_id)}

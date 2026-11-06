@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from asi_cliente import visor_pdf
 from asi_cliente.api.cliente import ClienteApi, ErrorApi, UsuarioSesion
 from asi_cliente.views.comunes import (
     Columna,
@@ -303,6 +304,7 @@ class VistaAsistenteImportacion(QWidget):
         ):
             return
         try:
+            visor_pdf.recordar(self.archivo)  # para «Ver PDF original» en la revisión
             lote = self.api.subir(
                 "/importaciones",
                 self.archivo.name,

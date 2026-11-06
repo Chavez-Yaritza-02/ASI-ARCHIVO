@@ -109,7 +109,7 @@ def test_cuadricula_baja_hasta_clases_vespertinas(qtbot, api, mensajes):  # noqa
     """Un horario de 17:00 en adelante no debe verse vacío al abrirlo."""
     from horario_ficticio import Clase
 
-    from asi_cliente.cuadricula import HORAS
+    from asi_cliente.cuadricula import HORAS, fila_visible_completa
 
     tarde = replace(UNO, clases=[Clase(0, 17, "CALC. DIF.", "A", "M01")])
     lote = subir(api, "tarde.pdf", pdf_escaneado(tarde))
@@ -119,5 +119,5 @@ def test_cuadricula_baja_hasta_clases_vespertinas(qtbot, api, mensajes):  # noqa
     vista.show()
     vista.seleccionar_importacion(lote["id"])
     assert [c["hora"] for c in vista.pagina["celdas_detalle"]] == [17]
-    primera_visible = vista.cuadricula.rowAt(0)
-    assert HORAS[primera_visible] >= 15  # ya no se queda en las 07:00
+    # La clase de las 17:00 se ve completa (antes la tabla se quedaba en las 07:00).
+    assert fila_visible_completa(vista.cuadricula, HORAS.index(17))

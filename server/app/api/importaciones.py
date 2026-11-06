@@ -69,6 +69,9 @@ class PaginaDetalle(PaginaResumen):
     lista_pendientes: list[str]
     avisos: list[str]
     celdas_detalle: list[CeldaSalida]
+    # Para abrir el PDF original desde la computadora del usuario y comprobar que es el mismo.
+    documento_sha256: str | None = None
+    archivo_importado: str | None = None
 
 
 class DocumentoSalida(BaseModel):
@@ -153,6 +156,8 @@ def _detalle_pagina(sesion: Session, p: PaginaImportada) -> PaginaDetalle:
         periodo_texto=p.periodo_texto,
         lista_pendientes=servicio.pendientes(sesion, p) if p.estado == "por_revisar" else [],
         avisos=servicio.avisos(sesion, p),
+        documento_sha256=p.documento.sha256,
+        archivo_importado=p.documento.importacion.nombre_archivo,
         celdas_detalle=[
             CeldaSalida(
                 **{k: getattr(c, k) for k in CeldaSalida.model_fields if k not in ("dia",)},

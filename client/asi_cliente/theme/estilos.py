@@ -187,6 +187,8 @@ QHeaderView::section {
     font-weight: 600;
 }
 QTableWidget#cuadricula { font-size: 12px; }
+/* Horas de la cuadrícula: poco margen, para poder compactar las horas vacías. */
+QTableWidget#cuadricula QHeaderView::section:vertical { padding: 2px 8px; }
 
 /* --- Pestañas (subsecciones) --- */
 QTabWidget::pane { border: none; border-top: 1px solid $borde; padding-top: 12px; }

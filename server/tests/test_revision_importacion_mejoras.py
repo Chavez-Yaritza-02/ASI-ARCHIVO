@@ -379,7 +379,8 @@ def test_desplazamiento_al_mostrar_y_redimensionar(qtbot, api, turnos):  # noqa:
     _procesar()
     assert fila_visible_completa(vista.cuadricula, fila)
     # Si el usuario desplaza a mano, ya no se le mueve la tabla.
-    vista.cuadricula.verticalScrollBar().setValue(0)
+    barra = vista.cuadricula.verticalScrollBar()
+    barra.triggerAction(barra.SliderAction.SliderToMinimum)  # como la rueda o el arrastre
     vista.resize(1100, 600)
     _procesar()
     assert vista.cuadricula.verticalScrollBar().value() == 0
