@@ -138,8 +138,11 @@ Al inicio de cada semestre, en **Horarios › Importar horarios** (o, desde Inic
    avance. Si una importación quedó a medias, **Continuar esa importación**.
 3. **Revisar.** Elige cada página de la lista y revísala. Colores de la cuadrícula:
    - **Verde**: correcto.
-   - **Amarillo**: el sistema sugiere un valor; revísalo y acéptalo
-     (**Aceptar todas las sugerencias** o doble clic → **Aplicar**).
+   - **Azul**: lo leído coincide exactamente con una materia, aula o docente dado de alta
+     después de importar. Se aceptan todas juntas con **Aceptar coincidencias exactas**.
+   - **Amarillo**: el sistema encontró algo **parecido** (una o dos letras distintas o una
+     abreviatura). Se confirma **una por una**: doble clic → revisa → **Aplicar**. El
+     docente parecido se confirma con **Confirmar docente**.
    - **Rojo**: falta elegir. Doble clic: se ve la imagen del documento original y lo que
      leyó el sistema; elige la materia, grupo o aula correctos, o créalos con **Nueva…**.
    - **Morado**: solo se conoce la letra del grupo (pendiente de validar).

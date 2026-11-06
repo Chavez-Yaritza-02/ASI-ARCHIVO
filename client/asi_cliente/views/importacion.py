@@ -49,6 +49,7 @@ RESUELTOS = ("coincide", "confirmado")
 COLORES = {  # fondo de la celda según su estado
     "ok": "#bbf7d0",
     "sugerido": "#fde68a",
+    "exacta": "#bfdbfe",  # coincide exactamente con el catálogo actual; falta aceptarla
     "falta": "#fecaca",
     "grupo": "#ddd6fe",
 }
@@ -76,19 +77,32 @@ TEXTO_ESTADO_CAMPO = {
 }
 
 
-def estado_campo(c: dict, campo: str) -> str:
-    """Estado de la asignatura o el aula de una celda: falta | sugerido | ok.
+def _propuesta(c: dict, campo: str) -> str:
+    """Estado de una propuesta calculada con los catálogos actuales: exacta | sugerido."""
+    return "exacta" if c.get(f"exacta_{campo}") else "sugerido"
 
-    `sugerencia_<campo>` es una coincidencia aproximada calculada con los catálogos
-    actuales: se pinta en amarillo y no cuenta hasta que el usuario la acepta.
+
+def estado_campo(c: dict, campo: str) -> str:
+    """Estado de la asignatura o el aula de una celda: falta | sugerido | exacta | ok.
+
+    - sugerido (amarillo): coincidencia aproximada, la leída al importar o la calculada
+      con los catálogos actuales. Se confirma una por una (doble clic → Aplicar).
+    - exacta (azul): el texto leído es idéntico a un registro dado de alta después de
+      importar. Se acepta con «Aceptar coincidencias exactas».
+    Ninguna cuenta hasta que el usuario la acepta.
     """
     if campo == "asignatura":
         if c["asignatura_id"] is None:
-            return "sugerido" if c.get("sugerencia_asignatura") else "falta"
+            return _propuesta(c, campo) if c.get("sugerencia_asignatura") else "falta"
         return "sugerido" if c["asignatura_estado"] == "sugerido" else "ok"
     if c["aula_id"] is None and c["aula_estado"] == "sin_coincidencia":
-        return "sugerido" if c.get("sugerencia_aula") else "falta"
+        return _propuesta(c, campo) if c.get("sugerencia_aula") else "falta"
     return "sugerido" if c["aula_estado"] == "sugerido" else "ok"
+
+
+def exactas(c: dict) -> list[str]:
+    """Campos de la celda con una coincidencia exacta aún sin aceptar."""
+    return [k for k in ("asignatura", "aula") if estado_campo(c, k) == "exacta"]
 
 
 def estado_celda(c: dict) -> str:
@@ -98,6 +112,8 @@ def estado_celda(c: dict) -> str:
         return "falta"
     if "sugerido" in estados:
         return "sugerido"
+    if "exacta" in estados:
+        return "exacta"
     if c["grupo_id"] is None and c["grupo_letra"]:
         return "grupo"
     return "ok"
@@ -279,6 +295,11 @@ class DialogoCeldaImportada(QDialog):
                 f"«{r[nombre]}»" for r in self.catalogos.get(catalogo, []) if r["id"] in ids
             )
 
+        if catalogo and self.celda.get(f"sugerencia_{campo}") and self.celda.get(f"exacta_{campo}"):
+            return (
+                f"COINCIDE EXACTAMENTE con {nombres([self.celda[f'sugerencia_{campo}']])}. "
+                "Aplica para aceptarla"
+            )
         if catalogo and self.celda.get(f"sugerencia_{campo}"):
             return (
                 f"SUGERIDO: {nombres([self.celda[f'sugerencia_{campo}']])} se parece a lo "
@@ -370,7 +391,12 @@ class DialogoCeldaImportada(QDialog):
         # Lo aceptado por el usuario se muestra como confirmado de inmediato.
         for clave in ("sugerencia_asignatura", "sugerencia_aula"):
             self.celda.pop(clave, None)
-        for clave in ("candidatos_asignatura", "candidatos_aula"):
+        for clave in (
+            "candidatos_asignatura",
+            "candidatos_aula",
+            "exacta_asignatura",
+            "exacta_aula",
+        ):
             self.celda.pop(clave, None)
         self.celda["asignatura_estado"] = "confirmado"
         self.celda["aula_estado"] = "confirmado"
@@ -401,7 +427,9 @@ class VistaImportacion(QWidget):
         self.celdas: dict[tuple[str, int], dict] = {}
         self.cambios_pendientes = False
         # Estados anteriores de la página (celdas y docente) para «Deshacer» antes de guardar.
-        self.historial: list[tuple[dict, int | None]] = []
+        self.historial: list[tuple[dict, int | None, bool]] = []
+        # El usuario confirmó el docente sugerido (se envía al guardar).
+        self.confirmar_docente = False
         self._docente_actual: int | None = None
         self.sugerencia_docente: dict | None = None
         self.catalogos: dict[str, list[dict]] = {}
@@ -449,9 +477,14 @@ class VistaImportacion(QWidget):
         self.docente = _combo_buscable(320)
         self.estado_docente = QLabel("", objectName="suave")
         self.boton_nuevo_docente = QPushButton("Crear docente con el nombre leído")
+        self.boton_confirmar_docente = QPushButton("Confirmar docente")
+        self.boton_confirmar_docente.setToolTip(
+            "El docente es una coincidencia aproximada: revísalo y confírmalo"
+        )
         fila_docente = QHBoxLayout()
         fila_docente.addWidget(QLabel("Docente"))
         fila_docente.addWidget(self.docente, 1)
+        fila_docente.addWidget(self.boton_confirmar_docente)
         fila_docente.addWidget(self.boton_nuevo_docente)
         self.estado_docente.setWordWrap(True)  # el estado se lee completo, sin recortes
         self.avisos = QLabel("", objectName="advertencia", wordWrap=True)
@@ -472,12 +505,17 @@ class VistaImportacion(QWidget):
         self.cuadricula.verticalHeader().setMinimumSectionSize(40)
         self.cuadricula.setEditTriggers(QAbstractItemView.NoEditTriggers)
         leyenda = QLabel(
-            "Colores: verde = listo · amarillo = sugerido, acéptalo · rojo = falta elegir · "
+            "Colores: verde = listo · azul = coincide exactamente, falta aceptarla · "
+            "amarillo = parecido, confírmalo con doble clic · rojo = falta elegir · "
             "morado = grupo pendiente de validar (solo letra). Doble clic para revisar una celda.",
             objectName="suave",
             wordWrap=True,
         )
-        self.boton_sugerencias = QPushButton("Aceptar todas las sugerencias")
+        self.boton_sugerencias = QPushButton("Aceptar coincidencias exactas")
+        self.boton_sugerencias.setToolTip(
+            "Acepta solo lo que coincide exactamente con los catálogos. Lo parecido (amarillo) "
+            "se confirma una por una con doble clic."
+        )
         self.boton_deshacer = QPushButton("Deshacer")
         self.boton_deshacer.setToolTip("Deshace la última corrección no guardada (Ctrl+Z)")
         self.boton_guardar = QPushButton("Guardar revisión")
@@ -546,6 +584,7 @@ class VistaImportacion(QWidget):
         self.paginas.itemSelectionChanged.connect(self._pagina_elegida)
         self.docente.activated.connect(self._docente_cambiado)
         self.boton_nuevo_docente.clicked.connect(self.crear_docente)
+        self.boton_confirmar_docente.clicked.connect(self.confirmar_docente_sugerido)
         self.cuadricula.cellDoubleClicked.connect(self.editar_celda)
         self.boton_sugerencias.clicked.connect(self.aceptar_sugerencias)
         self.boton_deshacer.clicked.connect(self.deshacer)
@@ -747,6 +786,7 @@ class VistaImportacion(QWidget):
         self.pagina = pagina
         self.cambios_pendientes = False
         self.historial = []
+        self.confirmar_docente = False
         self.celdas = {}
         self.sugerencia_docente = None
         if pagina is None:
@@ -803,6 +843,7 @@ class VistaImportacion(QWidget):
                 continue
             if s["id"] is not None:
                 celda[f"sugerencia_{s['campo']}"] = s["id"]
+                celda[f"exacta_{s['campo']}"] = s["estado"] == "coincide"
             elif s["candidatos"]:
                 celda[f"candidatos_{s['campo']}"] = s["candidatos"]
         self.sugerencia_docente = datos.get("docente")
@@ -813,7 +854,12 @@ class VistaImportacion(QWidget):
         propuesta = self.sugerencia_docente or {}
         if self.docente.currentData() is None and propuesta.get("id"):
             nombre = self._nombre("docentes", propuesta["id"], "nombre")
-            estado = f"SUGERIDO: «{nombre}» se parece a lo leído. Revisa y acepta"
+            if propuesta.get("estado") == "coincide":
+                estado = f"COINCIDE EXACTAMENTE con «{nombre}». Falta aceptarlo"
+            else:
+                estado = f"SUGERIDO: «{nombre}» se parece a lo leído. Revisa y confírmalo"
+        elif self.confirmar_docente:
+            estado = "confirmado (se guarda al pulsar «Guardar revisión»)"
         elif self.docente.currentData() is None and propuesta.get("candidatos"):
             nombres = " o ".join(
                 f"«{self._nombre('docentes', i, 'nombre')}»" for i in propuesta["candidatos"]
@@ -847,7 +893,10 @@ class VistaImportacion(QWidget):
                     c["asignatura_id"] or c.get("sugerencia_asignatura"),
                     "nombre",
                 )
-                grupos["Asignaturas"].append((f"{donde} · {leido}\nSUGERIDA: {nombre}", pos))
+                grupos["Asignaturas"].append((f"{donde} · {leido}\nPARECIDA: {nombre}", pos))
+            elif estado == "exacta":
+                nombre = self._nombre("asignaturas", c.get("sugerencia_asignatura"), "nombre")
+                grupos["Asignaturas"].append((f"{donde} · {leido}\nEXACTA: {nombre}", pos))
             if c["asignatura_id"] in materias and c["grupo_id"] is None:
                 if c["grupo_letra"]:
                     texto = f"solo la letra «{c['grupo_letra']}», pendiente de validar"
@@ -860,7 +909,10 @@ class VistaImportacion(QWidget):
                 grupos["Aulas"].append((f"{donde} · {leida}\nSIN COINCIDENCIA", pos))
             elif estado == "sugerido":
                 clave = self._nombre("aulas", c["aula_id"] or c.get("sugerencia_aula"), "clave")
-                grupos["Aulas"].append((f"{donde} · {leida}\nSUGERIDA: {clave}", pos))
+                grupos["Aulas"].append((f"{donde} · {leida}\nPARECIDA: {clave}", pos))
+            elif estado == "exacta":
+                clave = self._nombre("aulas", c.get("sugerencia_aula"), "clave")
+                grupos["Aulas"].append((f"{donde} · {leida}\nEXACTA: {clave}", pos))
         if self.pagina:
             if self.docente.currentData() is None:
                 grupos["Docente"].append(
@@ -869,6 +921,7 @@ class VistaImportacion(QWidget):
             elif (
                 self.docente.currentData() == (self.pagina["docente"] or {}).get("id")
                 and self.pagina["docente_estado"] == "sugerido"
+                and not self.confirmar_docente
             ):
                 grupos["Docente"].append(("Confirma el docente sugerido", None))
         return grupos
@@ -940,7 +993,12 @@ class VistaImportacion(QWidget):
             sugerida = self._nombre("asignaturas", c.get("sugerencia_asignatura"), "nombre")
             asignatura = (
                 self._nombre("asignaturas", c["asignatura_id"], "nombre")
-                or (f"¿{sugerida}?" if c["asignatura_id"] is None and sugerida else None)
+                or (
+                    # Exacta: el nombre tal cual; parecida: entre signos de interrogación.
+                    (sugerida if c.get("exacta_asignatura") else f"¿{sugerida}?")
+                    if c["asignatura_id"] is None and sugerida
+                    else None
+                )
                 or f"«{c['actividad_texto']}»"
             )
             grupo = self._nombre("grupos", c["grupo_id"], "clave") or (
@@ -948,7 +1006,11 @@ class VistaImportacion(QWidget):
             )
             aula_sugerida = self._nombre("aulas", c.get("sugerencia_aula"), "clave")
             aula = self._nombre("aulas", c["aula_id"], "clave") or (
-                (f"¿{aula_sugerida}?" if aula_sugerida else f"«{c['aula_texto']}»")
+                (
+                    (aula_sugerida if c.get("exacta_aula") else f"¿{aula_sugerida}?")
+                    if aula_sugerida
+                    else f"«{c['aula_texto']}»"
+                )
                 if c["aula_texto"] and c["aula_id"] is None
                 else None
             )
@@ -966,15 +1028,11 @@ class VistaImportacion(QWidget):
 
     def _actualizar_botones(self) -> None:
         editable = self._editable()
-        hay_sugerencias = editable and (
-            self.pagina["docente_estado"] == "sugerido"
-            or self._docente_sugerido() is not None
-            or any(
-                "sugerido" in (estado_campo(c, "asignatura"), estado_campo(c, "aula"))
-                for c in self.celdas.values()
-            )
+        hay_exactas = editable and (
+            self._docente_exacto() is not None or any(exactas(c) for c in self.celdas.values())
         )
-        self.boton_sugerencias.setEnabled(bool(hay_sugerencias))
+        self.boton_sugerencias.setEnabled(bool(hay_exactas))
+        self.boton_confirmar_docente.setVisible(editable and self._docente_por_confirmar())
         self.boton_deshacer.setEnabled(editable and bool(self.historial))
         self.boton_guardar.setEnabled(editable and self.cambios_pendientes)
         self.boton_aprobar.setEnabled(editable)
@@ -991,15 +1049,45 @@ class VistaImportacion(QWidget):
         propuesta = self.sugerencia_docente or {}
         return propuesta.get("id") if self.docente.currentData() is None else None
 
+    def _docente_exacto(self) -> int | None:
+        """Docente que coincide exactamente (nómina o nombre) con el catálogo actual."""
+        propuesta = self.sugerencia_docente or {}
+        return self._docente_sugerido() if propuesta.get("estado") == "coincide" else None
+
+    def _docente_por_confirmar(self) -> bool:
+        """Hay un docente parecido (no exacto) que el usuario debe confirmar."""
+        if self._docente_sugerido() is not None and self._docente_exacto() is None:
+            return True
+        guardado = (self.pagina or {}).get("docente") or {}
+        return (
+            not self.confirmar_docente
+            and self.pagina is not None
+            and self.pagina["docente_estado"] == "sugerido"
+            and self.docente.currentData() == guardado.get("id")
+        )
+
+    def confirmar_docente_sugerido(self) -> None:
+        """Confirmación individual del docente parecido."""
+        if not self._editable() or not self._docente_por_confirmar():
+            return
+        self._guardar_estado()
+        sugerido = self._docente_sugerido()
+        if sugerido is not None:
+            self.docente.setCurrentIndex(max(self.docente.findData(sugerido), 0))
+            self._docente_actual = sugerido
+        else:
+            self.confirmar_docente = True
+        self._marcar_cambio()
+
     def _guardar_estado(self, docente: int | None = None) -> None:
         """Apunta el estado actual para poder deshacer el siguiente cambio."""
         anterior = self._docente_actual if docente is None else docente
-        self.historial.append((copy.deepcopy(self.celdas), anterior))
+        self.historial.append((copy.deepcopy(self.celdas), anterior, self.confirmar_docente))
 
     def deshacer(self) -> None:
         if not self._editable() or not self.historial:
             return
-        self.celdas, docente = self.historial.pop()
+        self.celdas, docente, self.confirmar_docente = self.historial.pop()
         self._docente_actual = docente
         self.docente.setCurrentIndex(max(self.docente.findData(docente), 0))
         self.cambios_pendientes = bool(self.historial)
@@ -1150,6 +1238,7 @@ class VistaImportacion(QWidget):
     def _datos_revision(self) -> dict:
         return {
             "docente_id": self.docente.currentData(),
+            "confirmar_docente": self.confirmar_docente,
             "celdas": [
                 {
                     "id": c.get("id"),
@@ -1180,35 +1269,27 @@ class VistaImportacion(QWidget):
         return True
 
     def aceptar_sugerencias(self) -> None:
-        """Acepta, por decisión del usuario, todo lo sugerido en la página."""
-        locales = [
-            c
-            for c in self.celdas.values()
-            if c.get("sugerencia_asignatura") or c.get("sugerencia_aula")
-        ]
-        docente = self._docente_sugerido()
-        if locales or docente is not None:
-            self._guardar_estado()
-            for c in locales:
-                for campo in ("asignatura", "aula"):
-                    if c.get(f"sugerencia_{campo}"):
-                        c[f"{campo}_id"] = c.pop(f"sugerencia_{campo}")
-                        c[f"{campo}_estado"] = "confirmado"
-            if docente is not None:
-                self.docente.setCurrentIndex(max(self.docente.findData(docente), 0))
-                self._docente_actual = docente
-            self.cambios_pendientes = True
-        if self.cambios_pendientes and not self.guardar():
+        """«Aceptar coincidencias exactas»: solo lo idéntico a un registro del catálogo.
+
+        Las coincidencias aproximadas (amarillo) no se tocan: se confirman una por una
+        con doble clic en la celda o, la del docente, con «Confirmar docente».
+        """
+        celdas = [(c, exactas(c)) for c in self.celdas.values()]
+        celdas = [(c, campos) for c, campos in celdas if campos]
+        docente = self._docente_exacto()
+        if not celdas and docente is None:
             return
-        try:
-            pagina = self.api.post(
-                f"/importaciones/paginas/{self.pagina['id']}/aceptar-sugerencias"
-            )
-        except ErrorApi as error:
-            mostrar_error(self, error)
-            return
-        self._mostrar_pagina(pagina)
-        self._refrescar_lista(pagina["id"])
+        self._guardar_estado()
+        for c, campos in celdas:
+            for campo in campos:
+                c[f"{campo}_id"] = c.pop(f"sugerencia_{campo}")
+                c[f"{campo}_estado"] = "confirmado"
+                c.pop(f"exacta_{campo}", None)
+        if docente is not None:
+            self.docente.setCurrentIndex(max(self.docente.findData(docente), 0))
+            self._docente_actual = docente
+        self.cambios_pendientes = True
+        self.guardar()
 
     def aprobar(self, opciones: dict | None = None) -> None:
         opciones = opciones or {}

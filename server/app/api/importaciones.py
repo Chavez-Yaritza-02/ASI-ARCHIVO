@@ -112,6 +112,8 @@ class CeldaEntrada(BaseModel):
 class RevisionEntrada(BaseModel):
     docente_id: int | None = None
     celdas: list[CeldaEntrada] | None = None
+    # El usuario confirma, uno por uno, el docente sugerido (coincidencia aproximada).
+    confirmar_docente: bool = False
 
 
 class AprobacionEntrada(BaseModel):
@@ -275,7 +277,9 @@ def guardar_revision(id_: int, datos: RevisionEntrada, sesion: SesionDB, usuario
             )
             for c in datos.celdas
         ]
-    pagina = servicio.guardar_revision(sesion, usuario, id_, datos.docente_id, celdas)
+    pagina = servicio.guardar_revision(
+        sesion, usuario, id_, datos.docente_id, celdas, datos.confirmar_docente
+    )
     return _detalle_pagina(sesion, pagina)
 
 

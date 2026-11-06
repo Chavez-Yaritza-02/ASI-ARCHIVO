@@ -230,8 +230,9 @@ tendrá que producir ese mismo formato para reutilizar toda la revisión.
 | `GET /importaciones`, `GET /importaciones/{id}` | Avance, documentos y páginas con su conteo de pendientes |
 | `POST /importaciones/{id}/cancelar` | Descarta lo que quedaba por revisar |
 | `GET /importaciones/paginas/{id}` | Detalle: celdas, pendientes y avisos |
-| `PUT /importaciones/paginas/{id}` | Guarda la revisión (docente y celdas) |
-| `POST /importaciones/paginas/{id}/aceptar-sugerencias` | Acepta todas las sugerencias de la página |
+| `PUT /importaciones/paginas/{id}` | Guarda la revisión (docente, celdas y `confirmar_docente` para el docente sugerido) |
+| `GET /importaciones/paginas/{id}/sugerencias` | Solo lectura: compara lo leído con los catálogos actuales (`coincide` = exacta, `sugerido` = aproximada) |
+| `POST /importaciones/paginas/{id}/aceptar-sugerencias` | Acepta todas las sugerencias de la página. La interfaz ya no lo usa: acepta solo coincidencias exactas y las aproximadas se confirman una por una |
 | `POST /importaciones/paginas/{id}/aprobar` | Crea el borrador (`aceptar_diferencia_horas`, `permitir_duplicado`) |
 | `POST /importaciones/paginas/{id}/descartar` · `/restaurar` | Descartar o devolver a revisión |
 | `GET /importaciones/celdas/{id}/imagen` | Recorte PNG de la celda en el documento original |

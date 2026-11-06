@@ -472,8 +472,12 @@ def guardar_revision(
     pagina_id: int,
     docente_id: int | None,
     celdas: list[CeldaRevisada] | None,
+    confirmar_docente: bool = False,
 ) -> PaginaImportada:
-    """Guarda las correcciones del usuario. Todo valor elegido o cambiado queda confirmado."""
+    """Guarda las correcciones del usuario. Todo valor elegido o cambiado queda confirmado.
+
+    `confirmar_docente`: el usuario revisó el docente sugerido y lo acepta tal cual.
+    """
     pagina = obtener_pagina(sesion, pagina_id)
     _exigir_por_revisar(pagina)
     cambios: dict = {}
@@ -482,6 +486,13 @@ def guardar_revision(
         _validar_catalogo(sesion, Docente, docente_id, "El docente")
         cambios["docente"] = {"antes": pagina.docente_id, "despues": docente_id}
         pagina.docente_id = docente_id
+        pagina.docente_estado = "confirmado"
+    elif (
+        confirmar_docente
+        and pagina.docente_id is not None
+        and pagina.docente_estado not in ESTADOS_RESUELTOS
+    ):
+        cambios["docente_confirmado"] = pagina.docente_id
         pagina.docente_estado = "confirmado"
 
     if celdas is not None:

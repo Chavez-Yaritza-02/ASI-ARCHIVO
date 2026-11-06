@@ -165,7 +165,7 @@ def test_materias_y_aulas_distintas_no_se_confunden():
     assert buscar_aula("M02", [(1, "M01")]).estado == SIN_COINCIDENCIA
 
 
-def test_sugerencias_con_catalogo_nuevo_en_amarillo_y_con_aceptacion(qtbot, api):  # noqa: F811
+def test_sugerencias_con_catalogo_nuevo_en_amarillo_y_con_aceptacion(qtbot, api, dialogo, pregunta):  # noqa: F811
     lote = subir(api, "sugerencias.pdf", pdf_escaneado(DOCUMENTO))
     pagina_id = paginas(lote)[0]["id"]
     # Las materias se dan de alta DESPUÉS de importar (el caso de la demostración).
@@ -200,8 +200,19 @@ def test_sugerencias_con_catalogo_nuevo_en_amarillo_y_con_aceptacion(qtbot, api)
         is None
     )
 
-    # Solo al aceptar queda asignada y confirmada.
+    # «Aceptar coincidencias exactas» no la toma: es aproximada.
+    assert not vista.boton_sugerencias.isEnabled()
     vista.aceptar_sugerencias()
+    sigue = api.get(f"/importaciones/paginas/{pagina_id}")
+    assert (
+        next(c for c in sigue["celdas_detalle"] if c["id"] == jueves["id"])["asignatura_id"] is None
+    )
+    assert estado_celda(vista.celdas[("jueves", 8)]) == "sugerido"
+
+    # Se confirma individualmente: doble clic → Aplicar (con la sugerencia preseleccionada).
+    dialogo.valores = {"asignatura_id": sub["id"]}
+    vista.editar_celda(HORAS.index(8), DIAS.index("jueves"))
+    assert vista.guardar()
     aceptada = api.get(f"/importaciones/paginas/{pagina_id}")
     c = next(c for c in aceptada["celdas_detalle"] if c["id"] == jueves["id"])
     assert (c["asignatura_id"], c["asignatura_estado"]) == (sub["id"], "confirmado")
@@ -430,3 +441,106 @@ def test_pendientes_agrupados_localizan_la_celda(qtbot, api, dialogo):  # noqa: 
     textos = [arbol.topLevelItem(i).text(0) for i in range(arbol.topLevelItemCount())]
     assert "Aulas (1)" not in textos
     assert "Aulas\u00a00" in vista.lista_pendientes.text()
+
+
+# --- «Aceptar coincidencias exactas» -------------------------------------------------------
+
+MEZCLA = replace(
+    UNO,
+    clases=[
+        Clase(0, 7, "TALL. INV.", "A", "LAB 3"),  # exacta (se da de alta después)
+        Clase(1, 7, "SUB. ELFCT.", "A", "M01"),  # aproximada (catálogo actual)
+        Clase(2, 7, "FIS. GRAL", "A", "LAB 3"),  # aproximada al importar; aula exacta
+    ],
+)
+
+
+def _celda(api, pagina_id, dia):  # noqa: F811
+    detalle = api.get(f"/importaciones/paginas/{pagina_id}")
+    return next(c for c in detalle["celdas_detalle"] if c["dia"] == dia)
+
+
+def test_aceptar_exactas_deja_las_aproximadas_en_amarillo(qtbot, api, dialogo, pregunta):  # noqa: F811
+    fisica = api.post("/asignaturas", {"nombre": "Física General"})  # antes: queda «sugerido»
+    lote = subir(api, "mezcla.pdf", pdf_escaneado(MEZCLA))
+    pagina_id = paginas(lote)[0]["id"]
+    taller = api.post("/asignaturas", {"nombre": "TALL. INV."})
+    sub = api.post("/asignaturas", {"nombre": "SUB. ELECT."})
+    lab = api.post("/aulas", {"clave": "LAB 3"})
+    assert _celda(api, pagina_id, "miercoles")["asignatura_estado"] == "sugerido"
+
+    vista = vista_de(qtbot, api, lote)
+    assert estado_celda(vista.celdas[("lunes", 7)]) == "exacta"
+    item = vista.cuadricula.item(HORAS.index(7), DIAS.index("lunes"))
+    assert item.background().color().name() == COLORES["exacta"]
+    assert "TALL. INV." in texto(vista, "lunes", 7) and "¿" not in texto(vista, "lunes", 7)
+    assert estado_celda(vista.celdas[("martes", 7)]) == "sugerido"
+    assert estado_celda(vista.celdas[("miercoles", 7)]) == "sugerido"
+    assert vista.boton_sugerencias.text() == "Aceptar coincidencias exactas"
+    assert vista.boton_sugerencias.isEnabled()
+
+    vista.boton_sugerencias.click()
+    lunes, martes, miercoles = (_celda(api, pagina_id, d) for d in ("lunes", "martes", "miercoles"))
+    # Exactas: aceptadas y confirmadas.
+    assert (lunes["asignatura_id"], lunes["asignatura_estado"]) == (taller["id"], "confirmado")
+    assert (lunes["aula_id"], lunes["aula_estado"]) == (lab["id"], "confirmado")
+    assert (miercoles["aula_id"], miercoles["aula_estado"]) == (lab["id"], "confirmado")
+    # Aproximadas: sin tocar, siguen en amarillo.
+    assert martes["asignatura_id"] is None
+    assert (miercoles["asignatura_id"], miercoles["asignatura_estado"]) == (
+        fisica["id"],
+        "sugerido",
+    )
+    assert estado_celda(vista.celdas[("martes", 7)]) == "sugerido"
+    assert estado_celda(vista.celdas[("miercoles", 7)]) == "sugerido"
+    assert not vista.boton_sugerencias.isEnabled()  # ya no quedan exactas
+    hijos = [
+        vista.arbol_pendientes.topLevelItem(0).child(i).text(0)
+        for i in range(vista.arbol_pendientes.topLevelItem(0).childCount())
+    ]
+    assert len(hijos) == 2 and all("PARECIDA" in h for h in hijos)
+
+    # Cada aproximada se confirma por separado.
+    dialogo.valores = {"asignatura_id": sub["id"]}
+    vista.editar_celda(HORAS.index(7), DIAS.index("martes"))
+    assert vista.guardar()
+    assert estado_celda(vista.celdas[("miercoles", 7)]) == "sugerido"  # la otra sigue igual
+    dialogo.valores = {}  # Aplicar sin cambiar: confirma la sugerida
+    vista.editar_celda(HORAS.index(7), DIAS.index("miercoles"))
+    assert vista.guardar()
+    assert _celda(api, pagina_id, "martes")["asignatura_estado"] == "confirmado"
+    assert _celda(api, pagina_id, "miercoles")["asignatura_estado"] == "confirmado"
+
+
+def test_docente_aproximado_se_confirma_aparte(qtbot, api):  # noqa: F811
+    documento = replace(UNO, docente="DOCENTE PRUEBA UN0", nomina="ZZX9999")
+    lote = subir(api, "docente_parecido.pdf", pdf_escaneado(documento))
+    pagina_id = paginas(lote)[0]["id"]
+    assert api.get(f"/importaciones/paginas/{pagina_id}")["docente_estado"] == "sugerido"
+
+    vista = vista_de(qtbot, api, lote)
+    assert not vista.boton_confirmar_docente.isHidden()
+    vista.aceptar_sugerencias()  # no acepta docentes parecidos
+    assert api.get(f"/importaciones/paginas/{pagina_id}")["docente_estado"] == "sugerido"
+
+    vista.boton_confirmar_docente.click()
+    assert vista.boton_confirmar_docente.isHidden()
+    vista.deshacer()  # se puede deshacer antes de guardar
+    assert not vista.boton_confirmar_docente.isHidden() and not vista.cambios_pendientes
+    vista.boton_confirmar_docente.click()
+    assert vista.guardar()
+    assert api.get(f"/importaciones/paginas/{pagina_id}")["docente_estado"] == "confirmado"
+
+
+def test_docente_exacto_dado_de_alta_despues_se_acepta(qtbot, api):  # noqa: F811
+    documento = replace(UNO, docente="DOCENTE NUEVA EXACTA", nomina="ZZX0555")
+    lote = subir(api, "docente_exacto.pdf", pdf_escaneado(documento))
+    pagina_id = paginas(lote)[0]["id"]
+    nueva = api.post("/docentes", {"nombre": "DOCENTE NUEVA EXACTA", "nomina": "ZZX0555"})
+    vista = vista_de(qtbot, api, lote)
+    vista.catalogos["docentes"].append(nueva)
+    vista.docente.addItem(nueva["nombre"], nueva["id"])
+    assert vista.boton_sugerencias.isEnabled()
+    vista.boton_sugerencias.click()
+    detalle = api.get(f"/importaciones/paginas/{pagina_id}")
+    assert (detalle["docente"]["id"], detalle["docente_estado"]) == (nueva["id"], "confirmado")
