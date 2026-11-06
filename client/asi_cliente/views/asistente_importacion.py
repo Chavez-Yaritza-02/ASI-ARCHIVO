@@ -40,7 +40,7 @@ from asi_cliente.views.comunes import (
     confirmar,
     mostrar_error,
 )
-from asi_cliente.views.importacion import VistaImportacion
+from asi_cliente.views.importacion import VistaImportacion, importacion_original
 from asi_cliente.views.periodos import CAMPOS as CAMPOS_PERIODO
 
 PASOS = ["Periodo", "Archivo", "Revisar", "Confirmar"]
@@ -349,10 +349,30 @@ class VistaAsistenteImportacion(QWidget):
                 self.temporizador.start()
         else:
             self.temporizador.stop()
-            paginas = sum(len(d["paginas"]) for d in self.importacion["documentos"])
-            self.estado_subida.setText(
-                f"Lectura terminada: {paginas} página(s). Pulsa «Siguiente» para revisarlas."
-            )
+            docs = self.importacion["documentos"]
+            paginas = sum(len(d["paginas"]) for d in docs)
+            originales = sorted({importacion_original(d) for d in docs} - {None})
+            if paginas == 0 and originales:
+                # Todo el archivo ya estaba importado: se revisa la importación original.
+                nueva = self.importacion["id"]
+                try:
+                    self.importacion = self.api.get(f"/importaciones/{originales[0]}")
+                except ErrorApi as error:
+                    mostrar_error(self, error)
+                    return
+                self.estado_subida.setText(
+                    f"Este archivo ya se había importado (importación #{originales[0]}); no se "
+                    f"leyó de nuevo (la importación #{nueva} queda registrada sin páginas). "
+                    "Pulsa «Siguiente» para revisar sus clases en la importación original."
+                )
+            elif paginas == 0:
+                self.estado_subida.setText(
+                    "La lectura terminó sin páginas para revisar. Revisa el aviso en el paso 3."
+                )
+            else:
+                self.estado_subida.setText(
+                    f"Lectura terminada: {paginas} página(s). Pulsa «Siguiente» para revisarlas."
+                )
         self._actualizar_botones()
 
     # --- paso 4: confirmar ----------------------------------------------------------

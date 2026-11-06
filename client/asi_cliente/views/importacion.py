@@ -9,6 +9,7 @@
 4. "Aprobar" crea un horario en *borrador*; se confirma después en Horarios.
 """
 
+import re
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -35,7 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from asi_cliente.api.cliente import ClienteApi, ErrorApi, UsuarioSesion
-from asi_cliente.cuadricula import DIAS, HORAS, TITULOS_DIAS
+from asi_cliente.cuadricula import DIAS, HORAS, TITULOS_DIAS, mostrar_primera_clase
 from asi_cliente.views.comunes import Columna, Tabla, confirmar, encabezado, mostrar_error
 
 RESUELTOS = ("coincide", "confirmado")
@@ -279,6 +280,20 @@ class DialogoCeldaImportada(QDialog):
         self.accept()
 
 
+def importacion_original(documento: dict) -> int | None:
+    """Importación donde se leyó un PDF repetido.
+
+    Los servidores actualizados lo envían en `original_importacion_id`; los anteriores solo
+    en el mensaje («Idéntico a X.pdf (importación 2)»), que se usa como respaldo.
+    """
+    if documento.get("estado") != "duplicado":
+        return None
+    if documento.get("original_importacion_id") is not None:
+        return documento["original_importacion_id"]
+    encontrado = re.search(r"importación (\d+)\)?\s*$", documento.get("mensaje") or "")
+    return int(encontrado.group(1)) if encontrado else None
+
+
 class VistaImportacion(QWidget):
     def __init__(self, api: ClienteApi, usuario: UsuarioSesion):
         super().__init__()
@@ -298,6 +313,11 @@ class VistaImportacion(QWidget):
         self.lotes.setMinimumWidth(320)
         self.avance = QLabel("", objectName="suave")
         self.boton_cancelar = QPushButton("Cancelar importación")
+        self.aviso_lote = QLabel("", objectName="advertencia", wordWrap=True)
+        self.aviso_lote.hide()
+        self.boton_original = QPushButton("Abrir la importación original", objectName="primario")
+        self.boton_original.hide()
+        self.importacion_original: int | None = None
         barra = QHBoxLayout()
         self.etiqueta_periodo = QLabel("Periodo")
         barra.addWidget(self.etiqueta_periodo)
@@ -389,11 +409,16 @@ class VistaImportacion(QWidget):
             )
         )
         capa.addLayout(barra)
+        fila_aviso = QHBoxLayout()
+        fila_aviso.addWidget(self.aviso_lote, 1)
+        fila_aviso.addWidget(self.boton_original)
+        capa.addLayout(fila_aviso)
         capa.addWidget(divisor, 1)
 
         self.boton_importar.clicked.connect(self.importar)
         self.lotes.activated.connect(lambda *_: self.cargar_importacion())
         self.boton_cancelar.clicked.connect(self.cancelar_importacion)
+        self.boton_original.clicked.connect(self.abrir_original)
         self.paginas.itemSelectionChanged.connect(self._pagina_elegida)
         self.docente.activated.connect(self._docente_cambiado)
         self.boton_nuevo_docente.clicked.connect(self.crear_docente)
@@ -476,6 +501,7 @@ class VistaImportacion(QWidget):
             mostrar_error(self, error)
             return
         filas = [p for d in self.importacion["documentos"] for p in d["paginas"]]
+        self._explicar_lote(filas)
         self.paginas.cargar(filas)
         for i, p in enumerate(filas):
             self.paginas.item(i, 1).setForeground(
@@ -493,6 +519,44 @@ class VistaImportacion(QWidget):
         self._actualizar_barra()
         if self.importacion["estado"] == "procesando":
             self.temporizador.start()
+
+    def _explicar_lote(self, filas: list[dict]) -> None:
+        """Explica en palabras sencillas por qué una importación no tiene páginas que revisar."""
+        docs = self.importacion["documentos"] if self.importacion else []
+        duplicados = [d for d in docs if d["estado"] == "duplicado"]
+        errores = [d for d in docs if d["estado"] == "error"]
+        originales = sorted({importacion_original(d) for d in duplicados} - {None})
+        self.importacion_original = originales[0] if originales else None
+        textos = []
+        if duplicados:
+            nombres = ", ".join(d["nombre_archivo"] for d in duplicados[:3])
+            mas = f" y {len(duplicados) - 3} más" if len(duplicados) > 3 else ""
+            donde = f"la importación #{', #'.join(map(str, originales))}" if originales else "antes"
+            textos.append(
+                f"{nombres}{mas}: este PDF ya se había importado en {donde}. No se vuelve a "
+                "leer; sus clases se revisan en esa importación."
+            )
+        for d in errores:
+            textos.append(f"{d['nombre_archivo']}: no se pudo leer ({d['mensaje']}).")
+        if (
+            not filas
+            and not textos
+            and self.importacion
+            and (self.importacion["estado"] != "procesando")
+        ):
+            textos.append("Esta importación no tiene páginas para revisar.")
+        self.aviso_lote.setText("\n".join(textos))
+        self.aviso_lote.setVisible(bool(textos))
+        self.boton_original.setVisible(self.importacion_original is not None and not filas)
+        self.paginas.mensaje_vacio = (
+            "Sin páginas: revisa el aviso de arriba."
+            if textos
+            else "Las páginas aparecerán aquí cuando termine la lectura."
+        )
+
+    def abrir_original(self) -> None:
+        if self.importacion_original is not None:
+            self.seleccionar_importacion(self.importacion_original)
 
     def _actualizar_barra(self) -> None:
         i = self.importacion
@@ -581,7 +645,15 @@ class VistaImportacion(QWidget):
             f"Leído: «{pagina['docente_texto']}» · "
             + TEXTO_ESTADO_CAMPO.get(pagina["docente_estado"], pagina["docente_estado"])
         )
-        self.avisos.setText("\n".join(f"⚠ {a}" for a in pagina["avisos"]))
+        avisos = [f"⚠ {a}" for a in pagina["avisos"]]
+        if not pagina["celdas_detalle"]:
+            avisos.insert(
+                0,
+                "⚠ El OCR no reconoció ninguna clase en esta página (puede estar borrosa o "
+                "girada). Puedes capturarlas a mano: doble clic en el día y la hora de cada "
+                "clase. Compara con el PDF original antes de aprobar.",
+            )
+        self.avisos.setText("\n".join(avisos))
         self._mostrar_pendientes(pagina["lista_pendientes"])
         self._pintar()
         self._actualizar_botones()
@@ -618,6 +690,7 @@ class VistaImportacion(QWidget):
             item.setForeground(QColor("#1f2937"))
             item.setToolTip(f"Leído: {c['texto_ocr']}" if c["texto_ocr"] else "Capturada a mano")
             self.cuadricula.setItem(HORAS.index(hora), DIAS.index(dia), item)
+        mostrar_primera_clase(self.cuadricula, [h for _d, h in self.celdas])
 
     def _actualizar_botones(self) -> None:
         editable = self._editable()

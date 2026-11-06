@@ -20,6 +20,19 @@ class Celda:
     grupo_letra: str | None = None  # letra pendiente de validación (sin grupo completo)
 
 
+def mostrar_primera_clase(tabla, horas_ocupadas) -> None:
+    """Desplaza la cuadrícula hasta la primera hora con clase (p. ej. turno vespertino).
+
+    Sin esto, un horario que empieza a las 17:00 parece vacío porque se ve desde las 07:00.
+    """
+    horas = sorted(h for h in horas_ocupadas if h in HORAS)
+    if not horas:
+        tabla.scrollToTop()
+        return
+    fila = max(HORAS.index(horas[0]) - 1, 0)  # una fila antes, como referencia
+    tabla.scrollTo(tabla.model().index(fila, 0), tabla.ScrollHint.PositionAtTop)
+
+
 class CuadriculaNoCompatible(ValueError):
     """El horario tiene bloques que no empiezan o terminan en hora exacta."""
 

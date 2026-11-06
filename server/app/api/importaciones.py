@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import SesionDB, requiere_permiso
 from app.db.sesion import obtener_engine
-from app.models import Importacion, PaginaImportada, Periodo, Usuario
+from app.models import DocumentoImportado, Importacion, PaginaImportada, Periodo, Usuario
 from app.schemas.horarios import ORDEN_DIAS, HorarioDetalle, Referencia, detalle
 from app.services import importacion as servicio
 from asi_shared import DiaSemana, Permiso
@@ -77,6 +77,9 @@ class DocumentoSalida(BaseModel):
     estado: str
     mensaje: str
     paginas: list[PaginaResumen]
+    original_importacion_id: int | None = Field(
+        default=None, description="Si es un PDF ya importado: importación con sus páginas"
+    )
 
 
 class ImportacionSalida(BaseModel):
@@ -185,10 +188,18 @@ def _salida(sesion: Session, i: Importacion, con_documentos: bool):
                 estado=d.estado,
                 mensaje=d.mensaje,
                 paginas=[_resumen_pagina(sesion, p) for p in d.paginas],
+                original_importacion_id=_importacion_original(sesion, d),
             )
             for d in i.documentos
         ],
     )
+
+
+def _importacion_original(sesion: Session, d: DocumentoImportado) -> int | None:
+    if d.duplicado_de_id is None:
+        return None
+    original = sesion.get(DocumentoImportado, d.duplicado_de_id)
+    return original.importacion_id if original else None
 
 
 def _periodo_nombre(sesion: Session, periodo_id: int) -> str:

@@ -40,6 +40,7 @@ from asi_cliente.cuadricula import (
     CuadriculaNoCompatible,
     bloques_a_celdas,
     celdas_a_bloques,
+    mostrar_primera_clase,
 )
 from asi_cliente.views.comunes import (
     COLORES_ESTADO,
@@ -403,6 +404,7 @@ class VistaHorarios(QWidget):
             item.setBackground(_color_asignatura(celda.asignatura_id))
             item.setForeground(QColor("#1f2937"))
             self.cuadricula.setItem(HORAS.index(hora), DIAS.index(dia), item)
+        mostrar_primera_clase(self.cuadricula, [h for _d, h in self.celdas])
 
     def _actualizar_estado(self) -> None:
         h = self.horario
