@@ -18,6 +18,9 @@ def identidad():
         "version": VERSION,
         "protocolo": PROTOCOLO,
         "aceptacion_ficticia": obtener_configuracion().instancia_aceptacion,
+        # Para que la aplicación muestre siempre a qué servidor está conectada.
+        "entorno": obtener_configuracion().entorno,
+        "tipo_servidor": obtener_configuracion().tipo_servidor,
     }
 
 

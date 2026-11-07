@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from asi_cliente.api.cliente import ErrorApi
 from asi_cliente.views.asistencia_lote import DialogoCapturaLote
 from asi_cliente.views.bitacora import DialogoHistorial
-from asi_cliente.views.comunes import Columna, Tabla, encabezado, mostrar_error
+from asi_cliente.views.comunes import Columna, Desplegable, Tabla, encabezado, mostrar_error
 
 NOMBRES = {
     "pendiente": "Pendiente de verificar",
@@ -206,13 +206,17 @@ class VistaAsistenciaHora(QWidget):
             Columna("Faltantes min", lambda f: f["minutos"]["faltantes"]),
             Columna("Justificados min", lambda f: f["minutos"]["justificadas"]),
         ]
-        self.tabla = Tabla(columnas)
+        self.tabla = Tabla(
+            columnas,
+            "No hay horas programadas en esta fecha con los filtros elegidos. "
+            "Cambia la fecha o revisa los filtros.",
+        )
         self.tabla.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.historicos = Tabla(columnas)
+        self.historicos = Tabla(columnas, "No hay capturas fuera del programa en esta fecha.")
         self.pestanas = QTabWidget()
         self.pestanas.addTab(self.tabla, "Programa vigente en la fecha")
         self.pestanas.addTab(self.historicos, "Capturas fuera del programa actual")
-        self.boton_registrar = QPushButton("Registrar / corregir esta hora")
+        self.boton_registrar = QPushButton("Registrar / corregir esta hora", objectName="primario")
         self.boton_registrar.setVisible(usuario.puede("asistencia.registrar"))
         self.boton_lote = QPushButton("Registrar horas seleccionadas")
         self.boton_lote.setVisible(usuario.puede("asistencia.registrar"))
@@ -238,16 +242,19 @@ class VistaAsistenciaHora(QWidget):
             )
         )
         barra = QHBoxLayout()
-        for w in (
-            self.fecha,
-            self.docente,
-            self.turno,
-            self.tipo,
-            self.estado,
-            self.boton_consultar,
-        ):
+        for w in (QLabel("Fecha"), self.fecha, QLabel("Docente"), self.docente):
             barra.addWidget(w)
+        barra.addWidget(self.boton_consultar)
+        barra.addStretch()
         capa.addLayout(barra)
+        mas = QWidget()
+        fila_mas = QHBoxLayout(mas)
+        fila_mas.setContentsMargins(0, 0, 0, 0)
+        for w in (self.turno, self.tipo, self.estado):
+            fila_mas.addWidget(w)
+        fila_mas.addStretch()
+        self.mas_filtros = Desplegable("Más filtros (turno, tipo y estado)", mas)
+        capa.addWidget(self.mas_filtros)
         capa.addWidget(self.aviso)
         capa.addWidget(self.resumen)
         capa.addWidget(self.pestanas, 1)
@@ -262,9 +269,11 @@ class VistaAsistenciaHora(QWidget):
         ):
             acciones.addWidget(b)
         capa.addLayout(acciones)
-        rango = QHBoxLayout()
+        caja_rango = QWidget()
+        rango = QHBoxLayout(caja_rango)
+        rango.setContentsMargins(0, 0, 0, 0)
         for w in (
-            QLabel("Reporte desde"),
+            QLabel("Desde"),
             self.desde,
             QLabel("hasta"),
             self.hasta,
@@ -272,7 +281,10 @@ class VistaAsistenciaHora(QWidget):
             self.boton_excel_rango,
         ):
             rango.addWidget(w)
-        capa.addLayout(rango)
+        rango.addStretch()
+        self.reporte_rango = Desplegable("Reporte de varios días", caja_rango)
+        self.reporte_rango.setVisible(usuario.puede("reportes.generar"))
+        capa.addWidget(self.reporte_rango)
         self.boton_consultar.clicked.connect(self.cargar)
         self.fecha.dateChanged.connect(self.cargar)
         self.boton_registrar.clicked.connect(self.registrar)

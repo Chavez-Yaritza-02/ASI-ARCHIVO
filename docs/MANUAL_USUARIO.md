@@ -33,8 +33,10 @@ La primera vez que abras ASI-ARCHIVO aparece **«Conectar con Jefatura»**:
 
 La dirección queda guardada. Para cambiarla después: botón **Cambiar servidor** en la
 ventana de inicio de sesión, o **Inicio → ASI-ARCHIVO → Configurar conexión**.
+En **Administración › Configuración** ves el servidor, puedes **Probar conexión** y
+cambiar entre tema claro y oscuro.
 
-## 3. Iniciar sesión
+## 3. Iniciar sesión y moverse por la aplicación
 
 Escribe tu correo y contraseña y pulsa **Entrar**. **«Recordar sesión en este equipo»**
 evita escribir la contraseña cada día; no lo marques en computadoras compartidas.
@@ -43,23 +45,50 @@ evita escribir la contraseña cada día; no lo marques en computadoras compartid
 - ¿Olvidaste tu contraseña? Pide al administrador que la restablezca.
 - Para salir: **Cerrar sesión** (abajo a la izquierda).
 
-Cada persona ve solo los módulos que su rol permite. El rol **consulta** puede ver,
-pero no modificar.
+**Franja de arriba: a qué servidor estás conectada.** Siempre se ve, con su dirección:
+- Verde, **SERVIDOR INSTITUCIONAL · datos oficiales**: el sistema real de la Jefatura.
+- Naranja, **SERVIDOR DE DEMOSTRACIÓN**: para pruebas; no es el sistema oficial.
+- Morado, **SERVIDOR DE REVISIÓN · datos ficticios**: solo para revisar la aplicación.
+- Gris, **SERVIDOR SIN IDENTIFICAR**: confirma con el administrador antes de capturar.
+
+Lo que guardas queda solo en ese servidor. Si tienes cambios sin guardar (por ejemplo, una
+página de importación corregida), al cerrar la ventana o la sesión la aplicación avisa:
+**Volver y guardar** o **Salir sin guardar**.
+
+**El menú de la izquierda tiene seis secciones.** Cada una agrupa sus pantallas en
+pestañas en la parte de arriba:
+
+| Sección | Qué encuentras | Atajo |
+|---|---|---|
+| **Inicio** | Clases de hoy, pendientes, faltas, retardos y accesos rápidos | Ctrl+1 |
+| **Asistencias** | Registro por hora · Bitácora del día · Días inhábiles y eventos | Ctrl+2 |
+| **Horarios** | Por docente · Por grupo · Importar horarios · Registro de cambios | Ctrl+3 |
+| **Docentes** | Catálogo de docentes · Búsqueda general | Ctrl+4 |
+| **Reportes** | PDF y Excel de asistencia, bitácora y horarios por grupo | Ctrl+5 |
+| **Administración** | Periodos · Catálogos · Documentos · Tolerancia de retardos · Ubicación programada · Configuración | Ctrl+6 |
+
+Arriba siempre ves la **fecha** y el **periodo académico activo**. Cada persona ve solo
+lo que su rol permite: el rol **consulta** puede ver, pero no modificar.
+
+En las tablas, el campo **Buscar…** filtra mientras escribes. Los filtros poco usados
+están en **Mostrar más filtros** / **Mostrar filtros avanzados**.
 
 ## 4. Consultar docentes y horarios
 
-- **Docentes**: lista y búsqueda (no importan los acentos). Los docentes no se borran:
-  se desactivan.
-- **Buscador**: escribe un nombre para ver su horario y su información.
-- **Ubicación programada**: dónde *debería* estar un docente a cierta hora según su
-  horario (no confirma que esté ahí).
-- **Horarios**: elige periodo y docente. Se ven todas las versiones del horario; la
-  **vigente** es la oficial.
-- **Horarios por grupo**: horario semanal de un grupo.
+- **Docentes › Catálogo de docentes**: lista y búsqueda (no importan los acentos). Los
+  docentes no se borran: se desactivan.
+- **Docentes › Búsqueda general**: escribe un nombre para ver su horario y su información.
+- **Horarios › Por docente**: elige periodo y docente. Se ven todas las versiones del
+  horario; la **vigente** es la oficial. Los semestres anteriores se consultan eligiendo
+  su periodo.
+- **Horarios › Por grupo**: horario semanal de un grupo.
+- **Horarios › Registro de cambios**: quién creó, editó o confirmó cada horario y cuándo.
+- **Administración › Ubicación programada**: dónde *debería* estar un docente a cierta
+  hora según su horario (no confirma que esté ahí).
 
 ## 5. Registrar la asistencia por hora (uso diario)
 
-Sección **Asistencia por hora**:
+**Asistencias › Registro por hora** (o, desde Inicio, **Registrar asistencia**):
 
 1. Elige la **fecha** y pulsa **Consultar horas**. Aparece una fila por cada hora de clase
    o actividad programada ese día.
@@ -81,57 +110,76 @@ Sección **Asistencia por hora**:
 
 **Importante:**
 - Una hora sin registrar aparece como **Pendiente**: el sistema **nunca** pone faltas solo.
-- En días inhábiles o suspensiones no se esperan registros (ver **Calendario**).
+- En días inhábiles o suspensiones no se esperan registros (**Asistencias › Días inhábiles
+  y eventos**).
 - **Corregir** un registro pide escribir el **motivo**. Corregir días anteriores solo lo
   puede hacer quien tenga autorización.
 - **Historial de esta hora** muestra quién registró o cambió algo, cuándo y por qué.
 - **Documentos de esta hora** permite vincular un justificante (ver sección 8). Adjuntar
   un documento **no** cambia el estado: hay que registrar «Justificado».
 
-La **Bitácora del día** muestra el registro anterior por turno (matutino / vespertino)
-y sus incidencias; se conserva para consulta.
+**Asistencias › Bitácora del día** muestra el registro anterior por turno (matutino /
+vespertino) y sus incidencias; se conserva para consulta.
 
 ## 6. Reportes en PDF y Excel
 
-En **Asistencia por hora**:
+Sección **Reportes**, en tres pasos:
 
-- **PDF del día** / **Excel del día**: la fecha elegida.
-- **PDF del rango** / **Excel del rango**: varios días (hasta 93), con filtros de docente,
-  turno, estado y tipo de actividad.
+1. **¿Qué reporte necesitas?** Asistencia por hora de un día, de varios días (hasta 93),
+   bitácora del día por turno u horario semanal de un grupo.
+2. **Elige las fechas.** En **Mostrar filtros opcionales** puedes limitar por docente,
+   turno, tipo de actividad o estado.
+3. **Formato** (PDF para imprimir, Excel para revisar) → **Generar reporte…** → elige dónde
+   guardarlo. Al terminar, **Abrir el archivo** lo muestra.
 
-Elige dónde guardar el archivo. Los reportes muestran horas programadas, cumplidas,
-faltantes, justificadas y pendientes, y el PDF trae espacio para firmas
-(«Asistente de Jefatura» y «Jefatura de Electromecánica»).
+Los reportes muestran horas programadas, cumplidas, faltantes, justificadas y pendientes,
+y el PDF trae espacio para firmas («Asistente de Jefatura» y «Jefatura de Electromecánica»).
+Los botones **PDF del día** / **Excel del día** de Registro por hora siguen disponibles.
 
-## 7. Importar horarios desde PDF y corregir el OCR
+## 7. Importar horarios desde PDF (asistente de 4 pasos)
 
-Al inicio de cada semestre:
+Al inicio de cada semestre, en **Horarios › Importar horarios** (o, desde Inicio,
+**Importar horarios**). Abajo están **Anterior** y **Siguiente**:
 
-1. **Periodos**: crea el periodo (p. ej. AGOSTO - DICIEMBRE 2026) y **actívalo**
-   (antes cierra el anterior).
-2. **Importar horarios** → elige el periodo → **Importar archivo…** → elige el ZIP o PDF.
-   El servidor lee los PDF (unos segundos por archivo).
-3. Elige cada página de la lista y revísala. Colores de la cuadrícula:
+1. **Periodo.** Elige el periodo al que pertenecen los horarios. Si es un semestre nuevo,
+   **Crear periodo nuevo…** (p. ej. ENERO - JUNIO 2027). Cada semestre queda separado y los
+   horarios anteriores se conservan.
+2. **Archivo.** **Elegir PDF o ZIP…** → **Subir y leer con OCR**. Una barra muestra el
+   avance. Si una importación quedó a medias, **Continuar esa importación**.
+3. **Revisar.** Elige cada página de la lista y revísala. Colores de la cuadrícula:
    - **Verde**: correcto.
-   - **Amarillo**: el sistema sugiere un valor; revísalo y acéptalo
-     (**Aceptar todas las sugerencias** o doble clic → **Aplicar**).
+   - **Azul**: lo leído coincide exactamente con una materia, aula o docente dado de alta
+     después de importar. Se aceptan todas juntas con **Aceptar coincidencias exactas**.
+   - **Amarillo**: el sistema encontró algo **parecido** (una o dos letras distintas o una
+     abreviatura). Se confirma **una por una**: doble clic → revisa → **Aplicar**. El
+     docente parecido se confirma con **Confirmar docente**.
    - **Rojo**: falta elegir. Doble clic: se ve la imagen del documento original y lo que
      leyó el sistema; elige la materia, grupo o aula correctos, o créalos con **Nueva…**.
    - **Morado**: solo se conoce la letra del grupo (pendiente de validar).
-4. Revisa el **docente** arriba; si no existe, **Crear docente con el nombre leído**.
-5. **Aprobar: crear borrador** (solo se activa cuando no falta nada).
-6. En **Horarios**, abre el borrador y pulsa **Confirmar como vigente**. Después pulsa
-   **Confirmar / corregir fechas reales** e indica desde qué fecha rige: **sin esa fecha
-   el horario no aparece en Asistencia por hora**.
 
-Las páginas repetidas aparecen como **Duplicada** y un PDF ya importado no se procesa otra vez.
+   Revisa el **docente** arriba; si no existe, **Crear docente con el nombre leído**.
+   Pulsa **Guardar revisión**.
+4. **Confirmar.** La tabla muestra cada página con sus avisos:
+   - **Duplicado**: ese documento ya se había importado.
+   - **Conflicto**: el aula o el grupo ya están ocupados a esa hora por otro docente.
+
+   Pulsa **1) Aprobar las páginas revisadas**, elige **Aplican desde** (primer día en que
+   la asistencia usará estos horarios) y pulsa **2) Confirmar como vigentes**. La versión
+   anterior de cada docente pasa al historial; no se borra.
+
+Las páginas repetidas aparecen como **Copia repetida**. **Empezar otra importación**
+vuelve al paso 1.
+
+**Cambiar de semestre:** botón **Cambiar periodo** (arriba a la derecha). Cierra el
+periodo actual, que queda como historial de solo lectura, y activa el nuevo.
 
 ## 8. Documentos
 
-Sección **Documentos**:
+**Administración › Documentos**:
 
-- **Buscar documentos** por nombre, docente, periodo, categoría o fecha.
-- Selecciona un documento y su versión y pulsa **Ver página** para verlo.
+- **Buscar documentos** por nombre o docente; en **Mostrar filtros avanzados**, por
+  periodo, categoría o fecha.
+- Selecciona un documento, elige **Versión** y **Página** y pulsa **Ver página**.
 - **Cargar documento** (PDF, PNG o JPG, máximo 20 MB): nombre, fecha y categoría
   (justificante, permiso, comisión, horario original u otro). El servidor lo revisa con
   antivirus antes de guardarlo.
@@ -149,7 +197,7 @@ Sección **Documentos**:
 | Error de certificado o conexión no segura | Falta instalar el certificado del servidor: avisa al administrador |
 | «Correo o contraseña incorrectos» | Revisa mayúsculas; el administrador puede restablecerla |
 | «Demasiados intentos; espera 15 minutos» | Espera 15 minutos |
-| Un docente no aparece en Asistencia por hora | Su horario no tiene fechas de vigencia confirmadas (sección 7, paso 6) |
+| Un docente no aparece en Asistencia por hora | Su horario no tiene fechas de vigencia confirmadas: en **Horarios › Por docente** pulsa **Fechas de vigencia…** |
 | «Configura el antivirus…» al cargar documentos | Avisa al administrador |
 
 **Certificado del servidor** (solo si el administrador lo indica): abre el archivo

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import SesionDB, requiere_permiso
 from app.db.sesion import obtener_engine
-from app.models import Importacion, PaginaImportada, Periodo, Usuario
+from app.models import DocumentoImportado, Importacion, PaginaImportada, Periodo, Usuario
 from app.schemas.horarios import ORDEN_DIAS, HorarioDetalle, Referencia, detalle
 from app.services import importacion as servicio
 from asi_shared import DiaSemana, Permiso
@@ -69,6 +69,9 @@ class PaginaDetalle(PaginaResumen):
     lista_pendientes: list[str]
     avisos: list[str]
     celdas_detalle: list[CeldaSalida]
+    # Para abrir el PDF original desde la computadora del usuario y comprobar que es el mismo.
+    documento_sha256: str | None = None
+    archivo_importado: str | None = None
 
 
 class DocumentoSalida(BaseModel):
@@ -77,6 +80,9 @@ class DocumentoSalida(BaseModel):
     estado: str
     mensaje: str
     paginas: list[PaginaResumen]
+    original_importacion_id: int | None = Field(
+        default=None, description="Si es un PDF ya importado: importación con sus páginas"
+    )
 
 
 class ImportacionSalida(BaseModel):
@@ -109,6 +115,8 @@ class CeldaEntrada(BaseModel):
 class RevisionEntrada(BaseModel):
     docente_id: int | None = None
     celdas: list[CeldaEntrada] | None = None
+    # El usuario confirma, uno por uno, el docente sugerido (coincidencia aproximada).
+    confirmar_docente: bool = False
 
 
 class AprobacionEntrada(BaseModel):
@@ -148,6 +156,8 @@ def _detalle_pagina(sesion: Session, p: PaginaImportada) -> PaginaDetalle:
         periodo_texto=p.periodo_texto,
         lista_pendientes=servicio.pendientes(sesion, p) if p.estado == "por_revisar" else [],
         avisos=servicio.avisos(sesion, p),
+        documento_sha256=p.documento.sha256,
+        archivo_importado=p.documento.importacion.nombre_archivo,
         celdas_detalle=[
             CeldaSalida(
                 **{k: getattr(c, k) for k in CeldaSalida.model_fields if k not in ("dia",)},
@@ -185,10 +195,18 @@ def _salida(sesion: Session, i: Importacion, con_documentos: bool):
                 estado=d.estado,
                 mensaje=d.mensaje,
                 paginas=[_resumen_pagina(sesion, p) for p in d.paginas],
+                original_importacion_id=_importacion_original(sesion, d),
             )
             for d in i.documentos
         ],
     )
+
+
+def _importacion_original(sesion: Session, d: DocumentoImportado) -> int | None:
+    if d.duplicado_de_id is None:
+        return None
+    original = sesion.get(DocumentoImportado, d.duplicado_de_id)
+    return original.importacion_id if original else None
 
 
 def _periodo_nombre(sesion: Session, periodo_id: int) -> str:
@@ -264,12 +282,37 @@ def guardar_revision(id_: int, datos: RevisionEntrada, sesion: SesionDB, usuario
             )
             for c in datos.celdas
         ]
-    pagina = servicio.guardar_revision(sesion, usuario, id_, datos.docente_id, celdas)
+    pagina = servicio.guardar_revision(
+        sesion, usuario, id_, datos.docente_id, celdas, datos.confirmar_docente
+    )
     return _detalle_pagina(sesion, pagina)
+
+
+class Propuesta(BaseModel):
+    id: int | None
+    estado: str
+    candidatos: list[int]
+
+
+class PropuestaCelda(Propuesta):
+    celda_id: int
+    campo: str  # asignatura | aula
+
+
+class SugerenciasSalida(BaseModel):
+    docente: Propuesta | None
+    celdas: list[PropuestaCelda]
+
+
+@router.get("/paginas/{id_}/sugerencias", response_model=SugerenciasSalida)
+def sugerencias(id_: int, sesion: SesionDB, _: Editor):
+    """Sugerencias con los catálogos actuales. Solo lectura: no cambia la página."""
+    return servicio.sugerencias(sesion, id_)
 
 
 @router.post("/paginas/{id_}/aceptar-sugerencias", response_model=PaginaDetalle)
 def aceptar_sugerencias(id_: int, sesion: SesionDB, usuario: Editor):
+    """Acepta solo coincidencias exactas; las aproximadas se confirman una por una."""
     return _detalle_pagina(sesion, servicio.aceptar_sugerencias(sesion, usuario, id_))
 
 

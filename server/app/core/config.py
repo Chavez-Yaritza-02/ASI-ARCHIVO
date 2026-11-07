@@ -6,6 +6,7 @@ se sube a GitHub). Ver `.env.example` en la raíz del proyecto.
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,9 @@ class Configuracion(BaseSettings):
 
     entorno: str = "desarrollo"
     instancia_aceptacion: bool = False
+    # Cómo se presenta el servidor en la franja de la aplicación de escritorio.
+    # Sin valor, la aplicación lo deduce de `entorno` e `instancia_aceptacion`.
+    tipo_servidor: Literal["institucional", "demostracion", "revision"] | None = None
     hosts_permitidos: list[str] = []
     archivo_raiz: Path = Path.home() / ".local" / "share" / "asi-archivo" / "documentos"
     archivo_max_mb: int = Field(default=20, ge=1, le=50)

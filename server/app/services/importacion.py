@@ -5,7 +5,8 @@ Flujo:
    deja la importación "procesando".
 2. procesar(): (en segundo plano) OCR de cada PDF; guarda cada página como propuesta
    "por revisar", con lo leído y lo que coincidió con los catálogos.
-3. guardar_revision() / aceptar_sugerencias(): el usuario corrige y confirma.
+3. guardar_revision() / aceptar_sugerencias(): el usuario corrige y confirma (de golpe
+   solo lo exacto; lo aproximado, una por una).
 4. aprobar(): solo si no queda nada pendiente, crea un horario en *borrador*.
    Confirmarlo como vigente es un paso aparte (permiso horarios.confirmar).
 
@@ -472,8 +473,12 @@ def guardar_revision(
     pagina_id: int,
     docente_id: int | None,
     celdas: list[CeldaRevisada] | None,
+    confirmar_docente: bool = False,
 ) -> PaginaImportada:
-    """Guarda las correcciones del usuario. Todo valor elegido o cambiado queda confirmado."""
+    """Guarda las correcciones del usuario. Todo valor elegido o cambiado queda confirmado.
+
+    `confirmar_docente`: el usuario revisó el docente sugerido y lo acepta tal cual.
+    """
     pagina = obtener_pagina(sesion, pagina_id)
     _exigir_por_revisar(pagina)
     cambios: dict = {}
@@ -482,6 +487,13 @@ def guardar_revision(
         _validar_catalogo(sesion, Docente, docente_id, "El docente")
         cambios["docente"] = {"antes": pagina.docente_id, "despues": docente_id}
         pagina.docente_id = docente_id
+        pagina.docente_estado = "confirmado"
+    elif (
+        confirmar_docente
+        and pagina.docente_id is not None
+        and pagina.docente_estado not in ESTADOS_RESUELTOS
+    ):
+        cambios["docente_confirmado"] = pagina.docente_id
         pagina.docente_estado = "confirmado"
 
     if celdas is not None:
@@ -536,21 +548,71 @@ def guardar_revision(
     return pagina
 
 
+def sugerencias(sesion: Session, pagina_id: int) -> dict:
+    """Vuelve a comparar lo leído con los catálogos *actuales*, sin guardar nada.
+
+    Sirve para páginas importadas antes de dar de alta materias o aulas: lo que no tenía
+    coincidencia puede tenerla ahora. Solo se proponen valores; el usuario los acepta.
+    """
+    pagina = obtener_pagina(sesion, pagina_id)
+    catalogos = _cargar_catalogos(sesion)
+    salida: dict = {"docente": None, "celdas": []}
+
+    def propuesta(r: co.Resultado) -> dict | None:
+        if r.id is None and not r.candidatos:
+            return None
+        return {"id": r.id, "estado": r.estado, "candidatos": r.candidatos}
+
+    if pagina.estado != "por_revisar":
+        return salida
+    if pagina.docente_id is None:
+        salida["docente"] = propuesta(
+            co.buscar_docente(pagina.docente_texto, pagina.nomina, catalogos.docentes)
+        )
+    for c in pagina.celdas:
+        if c.origen != "ocr":
+            continue
+        if c.asignatura_id is None and c.actividad_texto:
+            p = propuesta(co.buscar_asignatura(c.actividad_texto, catalogos.asignaturas))
+            if p:
+                salida["celdas"].append({"celda_id": c.id, "campo": "asignatura", **p})
+        if c.aula_id is None and c.aula_estado == co.SIN_COINCIDENCIA and c.aula_texto:
+            p = propuesta(co.buscar_aula(c.aula_texto, catalogos.aulas))
+            if p:
+                salida["celdas"].append({"celda_id": c.id, "campo": "aula", **p})
+    return salida
+
+
 def aceptar_sugerencias(sesion: Session, usuario: Usuario, pagina_id: int) -> PaginaImportada:
-    """Acepta todas las sugerencias de la página (docente, asignaturas y aulas)."""
+    """Acepta de golpe solo las coincidencias EXACTAS con los catálogos actuales.
+
+    Las aproximadas («sugerido»: una o dos letras distintas, abreviaturas, confusiones del
+    OCR) no se aceptan aquí, aunque las pida una versión anterior de la aplicación: se
+    confirman una por una al guardar la revisión (`confirmar` en la celda o
+    `confirmar_docente`).
+    """
     pagina = obtener_pagina(sesion, pagina_id)
     _exigir_por_revisar(pagina)
+    catalogos = _cargar_catalogos(sesion)
     aceptadas = 0
-    if pagina.docente_estado == co.SUGERIDO and pagina.docente_id:
-        pagina.docente_estado = "confirmado"
-        aceptadas += 1
+    if pagina.docente_id is None:
+        r = co.buscar_docente(pagina.docente_texto, pagina.nomina, catalogos.docentes)
+        if r.estado == co.COINCIDE:
+            pagina.docente_id, pagina.docente_estado = r.id, "confirmado"
+            aceptadas += 1
     for c in pagina.celdas:
-        if c.asignatura_estado == co.SUGERIDO and c.asignatura_id:
-            c.asignatura_estado = "confirmado"
-            aceptadas += 1
-        if c.aula_estado == co.SUGERIDO and c.aula_id:
-            c.aula_estado = "confirmado"
-            aceptadas += 1
+        if c.origen != "ocr":
+            continue
+        if c.asignatura_id is None and c.actividad_texto:
+            r = co.buscar_asignatura(c.actividad_texto, catalogos.asignaturas)
+            if r.estado == co.COINCIDE:
+                c.asignatura_id, c.asignatura_estado = r.id, "confirmado"
+                aceptadas += 1
+        if c.aula_id is None and c.aula_estado == co.SIN_COINCIDENCIA and c.aula_texto:
+            r = co.buscar_aula(c.aula_texto, catalogos.aulas)
+            if r.estado == co.COINCIDE:
+                c.aula_id, c.aula_estado = r.id, "confirmado"
+                aceptadas += 1
     if aceptadas:
         auditar(
             sesion,
@@ -558,7 +620,7 @@ def aceptar_sugerencias(sesion: Session, usuario: Usuario, pagina_id: int) -> Pa
             "aceptar_sugerencias",
             "importacion_pagina",
             pagina.id,
-            despues={"aceptadas": aceptadas},
+            despues={"aceptadas": aceptadas, "solo_exactas": True},
         )
     sesion.commit()
     return pagina

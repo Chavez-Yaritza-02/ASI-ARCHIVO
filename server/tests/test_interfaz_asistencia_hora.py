@@ -150,7 +150,10 @@ def test_solo_consulta_no_puede_capturar(qtbot, api_horas, consulta, errores_hor
 def test_menu_abre_asistencia_horaria_antes_del_legado(qtbot, api_horas, errores_horas):
     v = VentanaPrincipal(api_horas.usuario, api_horas)
     qtbot.addWidget(v)
-    assert v.secciones[0][0] == "Asistencia por hora"
+    # Inicio va primero; dentro de Asistencias, la asistencia por hora precede a la bitácora.
+    assert v.secciones[0][0] == "Inicio" and v.secciones[1][0] == "Asistencia por hora"
+    asistencias = v.abrir_grupo("Asistencias")
+    assert asistencias.nombres[:2] == ["Asistencia por hora", "Bitácora del día"]
     assert isinstance(v.abrir_seccion("Asistencia por hora"), VistaAsistenciaHora)
     assert "Bitácora del día" in [s[0] for s in v.secciones]
     assert errores_horas == []

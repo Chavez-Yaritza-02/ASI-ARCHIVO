@@ -3,10 +3,13 @@
 Regla: nunca asignar una coincidencia dudosa de forma automática.
 - coincide: el texto normalizado es idéntico a un único registro. Se asigna.
 - sugerido: se parece a un único registro (confusiones típicas del OCR, como
-  "MOS" por "M05", o 1–2 letras distintas). Se propone, pero el usuario lo acepta.
+  "MOS" por "M05" o "ELFCT" por "ELECT", 1–2 letras distintas, o una abreviatura
+  habitual como "PROP. MAT." por "Propiedades de los Materiales"). Se propone, pero el
+  usuario lo acepta.
 - sin_coincidencia: no se parece a nada, o se parece a varios (ambiguo). El usuario elige.
 """
 
+import re
 from dataclasses import dataclass, field
 
 from app.importers.analisis import (
@@ -52,21 +55,100 @@ def buscar_aula(texto: str | None, aulas: list[tuple[int, str]]) -> Resultado:
     return _unico(extra, SUGERIDO) or Resultado(None, SIN_COINCIDENCIA)
 
 
+# Letras que el OCR confunde en esta tipografía: cambiar una por otra cuesta media edición.
+_PARECIDAS = {
+    frozenset(par)
+    for par in ("EF", "EB", "OQ", "O0", "OD", "I1", "IL", "L1", "S5", "B8", "Z2", "G6", "CG")
+}
+# Abreviaturas habituales en los horarios que no son el inicio de la palabra completa.
+ABREVIATURAS = {
+    "ADMON": "ADMINISTRACION",
+    "MTTO": "MANTENIMIENTO",
+    "MANTTO": "MANTENIMIENTO",
+    "GRAL": "GENERAL",
+    "DEPTO": "DEPARTAMENTO",
+    "EDO": "ESTADO",
+}
+_VACIAS = {"DE", "DEL", "LA", "LAS", "EL", "LOS", "Y", "E", "EN", "A", "AL", "PARA"}
+_NUMERAL = re.compile(r"^(?:[IVX]+|\d+)$")
+
+
+def distancia_ocr(a: str, b: str) -> float:
+    """Distancia de edición en la que las confusiones típicas del OCR cuestan 0.5."""
+    previa = [float(j) for j in range(len(b) + 1)]
+    for i, ca in enumerate(a, 1):
+        actual = [float(i)]
+        for j, cb in enumerate(b, 1):
+            cambio = 0.0 if ca == cb else (0.5 if frozenset((ca, cb)) in _PARECIDAS else 1.0)
+            actual.append(min(previa[j] + 1, actual[j - 1] + 1, previa[j - 1] + cambio))
+        previa = actual
+    return previa[-1]
+
+
+def _compacto(texto: str) -> str:
+    """Sin mayúsculas/minúsculas, acentos, espacios ni signos: 'Sub. Eléct.' -> 'SUBELECT'."""
+    return normalizar_nombre_asignatura(texto).replace(" ", "")
+
+
+def _tolerancia(compacto: str) -> float:
+    return 1.0 if len(compacto) <= 5 else 2.0  # textos cortos: a lo más una letra
+
+
+def _palabras(texto: str) -> list[str]:
+    return [
+        ABREVIATURAS.get(p, p)
+        for p in normalizar_nombre_asignatura(texto).split()
+        if p not in _VACIAS
+    ]
+
+
+def _palabra_abreviada(corta: str, larga: str) -> bool:
+    if corta == larga:
+        return True
+    if _NUMERAL.match(corta) or _NUMERAL.match(larga) or len(corta) < 3:
+        return False  # los numerales y las siglas de 1–2 letras deben ser idénticos
+    inicio = larga[: len(corta)]
+    return inicio == corta or (len(corta) >= 4 and distancia_ocr(corta, inicio) <= 1)
+
+
+def es_abreviatura(texto: str, nombre: str) -> bool:
+    """'PROP. MAT.' ~ 'Propiedades de los Materiales': cada palabra es el inicio de la otra."""
+    a, b = _palabras(texto), _palabras(nombre)
+    if not a or len(a) != len(b) or len(_compacto(texto)) < 4:
+        return False  # «TOR» es demasiado corto para proponer una materia
+    return all(_palabra_abreviada(*sorted((x, y), key=len)) for x, y in zip(a, b, strict=True))
+
+
+def _cercana(texto: str, nombre: str) -> bool:
+    if numeral_final(nombre) != numeral_final(texto):
+        return False  # "Avan I" nunca se confunde con "Avan II"
+    a, b = _compacto(texto), _compacto(nombre)
+    if distancia_ocr(a, b) <= min(_tolerancia(a), _tolerancia(b)):
+        return True
+    return similitud(nombre, texto) >= UMBRAL_NOMBRE
+
+
 def buscar_asignatura(texto: str, asignaturas: list[tuple[int, str]]) -> Resultado:
-    """`asignaturas`: (id, nombre) de las asignaturas activas."""
+    """`asignaturas`: (id, nombre) de las asignaturas activas.
+
+    Por niveles; en cuanto un nivel encuentra algo se detiene. Si hay más de un parecido
+    en el mismo nivel es ambiguo y no se propone ninguno.
+    """
     if not texto or not texto.strip():
         return Resultado(None, SIN_COINCIDENCIA)
-    plano = normalizar_nombre_asignatura(texto)
-    exactas = [i for i, n in asignaturas if normalizar_nombre_asignatura(n) == plano]
+    plano = _compacto(texto)
+    exactas = [i for i, n in asignaturas if _compacto(n) == plano]
     if r := _unico(exactas, COINCIDE):
         return r
-    # Parecida y con el mismo numeral final: "Avan I" nunca se confunde con "Avan II".
-    parecidas = [
+    parecidas = [i for i, n in asignaturas if _cercana(texto, n)]
+    if r := _unico(parecidas, SUGERIDO):
+        return r
+    abreviadas = [
         i
         for i, n in asignaturas
-        if similitud(n, texto) >= UMBRAL_NOMBRE and numeral_final(n) == numeral_final(texto)
+        if numeral_final(n) == numeral_final(texto) and es_abreviatura(texto, n)
     ]
-    return _unico(parecidas, SUGERIDO) or Resultado(None, SIN_COINCIDENCIA)
+    return _unico(abreviadas, SUGERIDO) or Resultado(None, SIN_COINCIDENCIA)
 
 
 def buscar_docente(
