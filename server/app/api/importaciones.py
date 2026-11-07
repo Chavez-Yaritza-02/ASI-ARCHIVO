@@ -312,6 +312,7 @@ def sugerencias(id_: int, sesion: SesionDB, _: Editor):
 
 @router.post("/paginas/{id_}/aceptar-sugerencias", response_model=PaginaDetalle)
 def aceptar_sugerencias(id_: int, sesion: SesionDB, usuario: Editor):
+    """Acepta solo coincidencias exactas; las aproximadas se confirman una por una."""
     return _detalle_pagina(sesion, servicio.aceptar_sugerencias(sesion, usuario, id_))
 
 

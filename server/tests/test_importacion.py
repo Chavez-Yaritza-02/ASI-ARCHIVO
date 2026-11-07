@@ -165,7 +165,13 @@ def test_no_se_aprueba_sin_revision_y_al_aprobar_solo_se_crea_borrador(
     ]
     r = cliente.put(f"/importaciones/paginas/{id_}", json={"celdas": celdas}, headers=como_admin)
     assert len(r.json()["lista_pendientes"]) == 2  # quedan dos sugerencias sin aceptar
+    # Aceptar de golpe no toma las aproximadas (aula «MOS» ~ M05, «GESTION» parecida).
     r = cliente.post(f"/importaciones/paginas/{id_}/aceptar-sugerencias", headers=como_admin)
+    assert len(r.json()["lista_pendientes"]) == 2
+    # Se confirman una por una: el usuario revisa cada celda y la acepta.
+    for c in celdas:
+        c["confirmar"] = True
+    r = cliente.put(f"/importaciones/paginas/{id_}", json={"celdas": celdas}, headers=como_admin)
     assert r.json()["lista_pendientes"] == []
 
     r = cliente.post(f"/importaciones/paginas/{id_}/aprobar", json={}, headers=como_admin)

@@ -5,7 +5,8 @@ Flujo:
    deja la importación "procesando".
 2. procesar(): (en segundo plano) OCR de cada PDF; guarda cada página como propuesta
    "por revisar", con lo leído y lo que coincidió con los catálogos.
-3. guardar_revision() / aceptar_sugerencias(): el usuario corrige y confirma.
+3. guardar_revision() / aceptar_sugerencias(): el usuario corrige y confirma (de golpe
+   solo lo exacto; lo aproximado, una por una).
 4. aprobar(): solo si no queda nada pendiente, crea un horario en *borrador*.
    Confirmarlo como vigente es un paso aparte (permiso horarios.confirmar).
 
@@ -583,20 +584,35 @@ def sugerencias(sesion: Session, pagina_id: int) -> dict:
 
 
 def aceptar_sugerencias(sesion: Session, usuario: Usuario, pagina_id: int) -> PaginaImportada:
-    """Acepta todas las sugerencias de la página (docente, asignaturas y aulas)."""
+    """Acepta de golpe solo las coincidencias EXACTAS con los catálogos actuales.
+
+    Las aproximadas («sugerido»: una o dos letras distintas, abreviaturas, confusiones del
+    OCR) no se aceptan aquí, aunque las pida una versión anterior de la aplicación: se
+    confirman una por una al guardar la revisión (`confirmar` en la celda o
+    `confirmar_docente`).
+    """
     pagina = obtener_pagina(sesion, pagina_id)
     _exigir_por_revisar(pagina)
+    catalogos = _cargar_catalogos(sesion)
     aceptadas = 0
-    if pagina.docente_estado == co.SUGERIDO and pagina.docente_id:
-        pagina.docente_estado = "confirmado"
-        aceptadas += 1
+    if pagina.docente_id is None:
+        r = co.buscar_docente(pagina.docente_texto, pagina.nomina, catalogos.docentes)
+        if r.estado == co.COINCIDE:
+            pagina.docente_id, pagina.docente_estado = r.id, "confirmado"
+            aceptadas += 1
     for c in pagina.celdas:
-        if c.asignatura_estado == co.SUGERIDO and c.asignatura_id:
-            c.asignatura_estado = "confirmado"
-            aceptadas += 1
-        if c.aula_estado == co.SUGERIDO and c.aula_id:
-            c.aula_estado = "confirmado"
-            aceptadas += 1
+        if c.origen != "ocr":
+            continue
+        if c.asignatura_id is None and c.actividad_texto:
+            r = co.buscar_asignatura(c.actividad_texto, catalogos.asignaturas)
+            if r.estado == co.COINCIDE:
+                c.asignatura_id, c.asignatura_estado = r.id, "confirmado"
+                aceptadas += 1
+        if c.aula_id is None and c.aula_estado == co.SIN_COINCIDENCIA and c.aula_texto:
+            r = co.buscar_aula(c.aula_texto, catalogos.aulas)
+            if r.estado == co.COINCIDE:
+                c.aula_id, c.aula_estado = r.id, "confirmado"
+                aceptadas += 1
     if aceptadas:
         auditar(
             sesion,
@@ -604,7 +620,7 @@ def aceptar_sugerencias(sesion: Session, usuario: Usuario, pagina_id: int) -> Pa
             "aceptar_sugerencias",
             "importacion_pagina",
             pagina.id,
-            despues={"aceptadas": aceptadas},
+            despues={"aceptadas": aceptadas, "solo_exactas": True},
         )
     sesion.commit()
     return pagina

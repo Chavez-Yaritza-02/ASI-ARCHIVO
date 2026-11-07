@@ -545,3 +545,23 @@ def test_docente_exacto_dado_de_alta_despues_se_acepta(qtbot, api):  # noqa: F81
     vista.boton_sugerencias.click()
     detalle = api.get(f"/importaciones/paginas/{pagina_id}")
     assert (detalle["docente"]["id"], detalle["docente_estado"]) == (nueva["id"], "confirmado")
+
+
+def test_servidor_no_acepta_aproximadas_de_golpe(api):  # noqa: F811
+    """Aunque una versión anterior de la aplicación lo pida, el servidor solo acepta exactas."""
+    fisica = api.post("/asignaturas", {"nombre": "Física General"})  # aproximada al importar
+    lote = subir(api, "servidor.pdf", pdf_escaneado(MEZCLA))
+    pagina_id = paginas(lote)[0]["id"]
+    taller = api.post("/asignaturas", {"nombre": "TALL. INV."})  # exacta, alta posterior
+    api.post("/asignaturas", {"nombre": "SUB. ELECT."})  # aproximada, alta posterior
+
+    api.post(f"/importaciones/paginas/{pagina_id}/aceptar-sugerencias")
+    lunes, martes, miercoles = (_celda(api, pagina_id, d) for d in ("lunes", "martes", "miercoles"))
+    assert (lunes["asignatura_id"], lunes["asignatura_estado"]) == (taller["id"], "confirmado")
+    assert martes["asignatura_id"] is None  # «SUB. ELFCT.»: no se asigna sola
+    assert (miercoles["asignatura_id"], miercoles["asignatura_estado"]) == (
+        fisica["id"],
+        "sugerido",  # sigue esperando confirmación individual
+    )
+    pendientes = api.get(f"/importaciones/paginas/{pagina_id}")["lista_pendientes"]
+    assert any("confirma la asignatura sugerida" in p for p in pendientes)
