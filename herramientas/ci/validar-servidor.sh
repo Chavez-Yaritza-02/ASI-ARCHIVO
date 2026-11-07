@@ -24,7 +24,15 @@ python3 preparar.py --dominio localhost --tls internal
 "${DC[@]}" --profile mantenimiento run --rm migracion
 "${DC[@]}" exec -T db psql -U asi_admin -d asi_archivo -v ON_ERROR_STOP=1 < db/permisos.sql
 "${DC[@]}" up -d --wait --wait-timeout 900 api clamav https respaldos
-"${DC[@]}" cp https:/data/caddy/pki/authorities/local/root.crt "$raiz/raiz.crt"
+# Caddy genera su certificado interno unos segundos después de arrancar: esperar a que el
+# HTTPS responda (con verificación del certificado) antes de las pruebas.
+for intento in $(seq 1 30); do
+  "${DC[@]}" cp https:/data/caddy/pki/authorities/local/root.crt "$raiz/raiz.crt" 2>/dev/null \
+    && curl -sf --cacert "$raiz/raiz.crt" https://localhost:18443/sistema/identidad >/dev/null \
+    && break
+  [ "$intento" -lt 30 ] || { echo 'HTTPS no estuvo listo en 60 s'; exit 1; }
+  sleep 2
+done
 openssl rand -hex 24 > "$raiz/admin-clave"
 openssl rand -hex 24 > "$raiz/consulta-clave"
 "${DC[@]}" exec -T api python /opt/asi/entrada.py python -m app.cli crear-usuario --correo admin@example.invalid --nombre 'Administrador ficticio' --rol administrador --contrasena-stdin < "$raiz/admin-clave"

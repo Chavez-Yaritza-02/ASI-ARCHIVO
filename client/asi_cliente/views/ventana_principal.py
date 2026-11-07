@@ -31,19 +31,15 @@ from asi_cliente.views.consultas import (
     VistaUbicacion,
 )
 from asi_cliente.views.documentos import VistaDocumentos
-from asi_cliente.views.horarios import VistaHorarios
-from asi_cliente.views.importacion import VistaImportacion
-from asi_cliente.views.periodos import VistaPeriodos
+from asi_cliente.views.gestion_horarios import VistaGestionHorarios
 
 # (título del menú, permiso necesario para verlo, etapa en que se implementa)
 SECCIONES = [
     ("Asistencia por hora", "asistencia.ver", 4),
     ("Bitácora del día", "asistencia.ver", 4),
     ("Calendario", "asistencia.ver", 4),
-    ("Horarios", "horarios.ver", 2),
-    ("Importar horarios", "horarios.editar", 3),
+    ("Gestión de horarios", "horarios.ver", 2),
     ("Docentes", "docentes.ver", 2),
-    ("Periodos", "horarios.ver", 2),
     ("Catálogos", "horarios.ver", 2),
     ("Buscador", "docentes.ver", 5),
     ("Horarios por grupo", "horarios.ver", 5),
@@ -57,15 +53,21 @@ PANTALLAS = {
     "Asistencia por hora": VistaAsistenciaHora,
     "Bitácora del día": VistaBitacora,
     "Calendario": VistaCalendario,
-    "Horarios": VistaHorarios,
+    "Gestión de horarios": VistaGestionHorarios,
     "Buscador": VistaBuscador,
     "Horarios por grupo": VistaGrupos,
     "Ubicación programada": VistaUbicacion,
     "Tolerancia de retardos": VistaConfiguracionAsistencia,
-    "Importar horarios": VistaImportacion,
     "Docentes": lambda api, u: VistaCatalogo(api, u, DOCENTES, "Docentes"),
-    "Periodos": VistaPeriodos,
     "Catálogos": VistaCatalogos,
+}
+
+# Nombres anteriores del menú: ahora son pestañas dentro de "Gestión de horarios".
+PESTANAS_GESTION = {
+    "Horarios": "Horarios",
+    "Importar horarios": "Importar y revisar",
+    "Periodos": "Periodos",
+    "Registro de cambios": "Registro de cambios",
 }
 
 _DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -176,6 +178,13 @@ class VentanaPrincipal(QMainWindow):
         self.paginas.setCurrentIndex(indice)
 
     def abrir_seccion(self, titulo: str) -> QWidget:
+        pestana = PESTANAS_GESTION.get(titulo)
+        if pestana:
+            gestion = self.abrir_seccion("Gestión de horarios")
+            vista = gestion.mostrar(pestana)
+            if vista is None:
+                raise StopIteration(titulo)  # sin permiso para esa pestaña
+            return vista
         indice = next(i for i, s in enumerate(self.secciones) if s[0] == titulo)
         self.menu.setCurrentRow(indice)
         return self.paginas.widget(indice)

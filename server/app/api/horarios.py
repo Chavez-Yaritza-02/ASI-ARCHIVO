@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import SesionDB, requiere_permiso
@@ -50,6 +50,17 @@ def listar(
     estado: EstadoHorario | None = None,
 ):
     return [resumen(h) for h in servicio.listar(sesion, docente_id, periodo_id, estado)]
+
+
+@router.get("/cambios")
+def cambios(
+    sesion: SesionDB,
+    _: Lector,
+    periodo_id: int | None = Query(None, ge=1),
+    docente_id: int | None = Query(None, ge=1),
+):
+    """Registro de cambios de los horarios (solo lectura)."""
+    return servicio.cambios(sesion, periodo_id, docente_id)
 
 
 @router.get("/{id_}", response_model=HorarioDetalle)

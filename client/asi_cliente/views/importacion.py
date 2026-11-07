@@ -803,9 +803,20 @@ class VistaImportacion(QWidget):
             mostrar_error(self, ErrorApi("Primero crea o activa un periodo"))
             return
         ruta, _ = QFileDialog.getOpenFileName(
-            self, "Elegir horarios", str(Path.home()), "Horarios (*.zip *.pdf)"
+            self,
+            f"Elegir horarios para {periodo['nombre']}",
+            str(Path.home()),
+            "Horarios (*.zip *.pdf)",
         )
         if not ruta:
+            return
+        if not confirmar(
+            self,
+            f"¿Importar {Path(ruta).name} en {periodo['nombre']}?",
+            "Los horarios quedarán asociados a ese periodo. Nada se guarda como horario hasta "
+            "que revises y apruebes cada página. Si el periodo no es el correcto, elige otro "
+            "en la lista «Periodo» antes de importar.",
+        ):
             return
         self.importar_archivo(Path(ruta), periodo["id"])
 
