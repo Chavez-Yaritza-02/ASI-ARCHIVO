@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 1.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 1b.
 
 ## 1. Objetivo
 
@@ -60,7 +60,7 @@ de la universidad y desde una MacBook, con la misma información en las tres.
 | Token en el cliente | `keyring` | Llavero de Windows / Llavero de macOS |
 | Dependencias | `uv` (espacio de trabajo) | Instalación rápida y reproducible (`uv.lock`) |
 | Calidad | `ruff` + `pytest` + GitHub Actions | Estilo uniforme y pruebas en cada *push* |
-| OCR (Etapa 3) | PyMuPDF + Tesseract | Primero se lee el texto digital del PDF; el OCR solo se usa si no hay texto |
+| OCR (Etapa 3) | PyMuPDF + Tesseract (`eng`) + OpenCV | Los horarios son escaneados; el encabezado se lee del código QR (ver [EVALUACION_OCR.md](EVALUACION_OCR.md)) |
 | Reportes (Etapa 7) | Jinja2 + WeasyPrint, `openpyxl` | PDF desde plantillas HTML y Excel nativo |
 | Ejecutables (Etapa 8) | PyInstaller | `.exe` para Windows y `.app` para macOS |
 
@@ -89,6 +89,9 @@ ASI-ARCHIVO/
 │   │   ├── api/            # cliente HTTP hacia la API
 │   │   ├── views/          # ventanas y pantallas
 │   │   └── theme/          # temas claro y oscuro
+│   └── tests/
+├── herramientas/
+│   ├── ocr_prueba/         # prototipo de extracción y evaluación de OCR (Etapa 1b)
 │   └── tests/
 ├── docs/                   # esta documentación
 └── .github/workflows/      # pruebas automáticas
@@ -131,6 +134,11 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 - `lote_importacion`: un ZIP, quién lo subió y su estado.
 - `archivo_importado`: hash SHA-256 (para detectar duplicados), páginas y método
   (texto u OCR).
+- Cada página trae un código QR con el encabezado (docente, nómina, periodo, vigencia,
+  versión, fecha) y el total de horas. Se usa para llenar el encabezado sin OCR y para
+  verificar que se leyeron todas las celdas.
+- Un PDF puede traer copias o varias versiones del mismo horario. El importador las
+  agrupa por versión y fecha, descarta copias y pide al usuario la versión vigente.
 - `fila_extraida`: zona temporal para la vista previa editable; nada pasa a `horario`
   hasta que el usuario lo confirma.
 - La importación usa una interfaz común de "lector" (PDF, Excel, CSV) para que agregar
@@ -195,8 +203,8 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 | Etapa | Contenido | Estado |
 |---|---|---|
 | 1 | Estructura, entorno, base de datos, autenticación, ventana de login, CI | ✅ Completa |
-| 1b | Prueba de OCR con los PDFs reales (solo local) | Siguiente |
-| 2 | Docentes, periodos, captura y edición de horarios con versiones | |
+| 1b | Prueba de OCR con los PDFs reales (solo local) | ✅ Completa ([resultados](EVALUACION_OCR.md)) |
+| 2 | Docentes, periodos, captura y edición de horarios con versiones | Siguiente (pendiente de autorización) |
 | 3 | Importación ZIP → PDF → texto/OCR → vista previa editable | |
 | 4 | Bitácora diaria y registro de asistencia | |
 | 5 | Buscador, horarios por grupo, cruces, ubicación programada | |
@@ -213,3 +221,6 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 | 2026-11-04 | SQLAlchemy síncrono | Más simple de entender y suficiente para el volumen de la Jefatura |
 | 2026-11-04 | Las pruebas recrean la BD con las migraciones reales | Así también se prueba que las migraciones funcionan |
 | 2026-11-04 | Importación con interfaz común de lectores | Se pidió dejar preparada la importación desde Excel y CSV |
+| 2026-11-04 | Encabezado del horario desde el código QR | Exacto y gratuito; el OCR del encabezado queda como respaldo |
+| 2026-11-04 | OCR por columna, modelo `eng`, sin diccionario | 100% día/hora y grupo, 97% aula, frente a 81% del primer intento |
+| 2026-11-04 | Catálogos de aulas y asignaturas para corregir el OCR | Aula 99.4%; solo se corrige con coincidencia única, si no se marca para revisión |
