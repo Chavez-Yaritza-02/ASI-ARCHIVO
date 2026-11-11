@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Configuración local y secretos
+.env
+*.env.local
+
+# Datos reales: nunca al repositorio
+datos/
+*.zip
+
+# Sistema / editores
+.DS_Store
+.vscode/
+.idea/

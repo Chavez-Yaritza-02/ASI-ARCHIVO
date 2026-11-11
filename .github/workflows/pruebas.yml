@@ -1,0 +1,32 @@
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: asi_dev
+          POSTGRES_PASSWORD: asi_dev_ci
+          POSTGRES_DB: asi_archivo_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ASI_TEST_DATABASE_URL: postgresql+psycopg://asi_dev:asi_dev_ci@localhost:5432/asi_archivo_test
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Bibliotecas de sistema para Qt
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
+      - run: uv sync --python 3.12 --locked
+      - name: Estilo de código
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Pruebas
+        run: uv run pytest -q

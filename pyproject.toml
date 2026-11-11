@@ -1,0 +1,41 @@
+[project]
+name = "asi-archivo"
+version = "0.1.0"
+description = "Sistema de Asistencia y Archivo Digital — Jefatura de Electromecánica, TecMM Zapopan"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["shared", "server", "client"]
+
+[tool.uv.sources]
+asi-shared = { workspace = true }
+asi-server = { workspace = true }
+asi-cliente = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "asi-shared",
+    "asi-server",
+    "asi-cliente",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "asi_cliente", "asi_shared"]
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests", "client/tests"]
+addopts = "--import-mode=importlib"
+filterwarnings = ["ignore::DeprecationWarning:fastapi.testclient", "ignore:Using `httpx`"]
