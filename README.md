@@ -56,6 +56,35 @@ uv run asi-archivo
 El cliente se conecta a `http://127.0.0.1:8000` por defecto. Para otro servidor, define
 `ASI_SERVIDOR_URL`; fuera de la propia computadora solo se acepta `https://`.
 
+Después de actualizar el código, aplica las migraciones nuevas antes de abrir la app:
+
+```bash
+cd server && uv run alembic upgrade head && cd ..
+```
+
+## Uso: docentes, periodos y horarios (Etapa 2)
+
+| Pantalla | Qué permite |
+|---|---|
+| **Periodos** | Crear periodos (p. ej. AGOSTO - DICIEMBRE 2026), activar uno y cerrarlo al terminar el semestre. Solo uno puede estar activo; los cerrados quedan de solo lectura |
+| **Docentes** | Registrar, buscar (sin importar acentos), editar, activar y desactivar |
+| **Catálogos** | Asignaturas (materias o actividades), grupos y aulas |
+| **Horarios** | Elegir periodo y docente, ver todas las versiones, crear una versión nueva, editar la cuadrícula semanal y confirmar la versión vigente |
+
+Flujo para capturar un horario:
+
+1. Activa el periodo y da de alta docente, asignaturas, grupos y aulas.
+2. En **Horarios**, elige al docente y pulsa **Nueva versión** (si ya hay una vigente, se copia).
+3. Haz doble clic en una celda para asignar actividad, grupo, aula y duración. Usa
+   **Supr** para vaciar celdas seleccionadas.
+4. **Guardar cambios**: el servidor valida traslapes, materias sin grupo y catálogos inactivos.
+5. **Confirmar como vigente** (solo administradores). Si el aula la ocupa otro docente, o
+   la versión es idéntica a la vigente, se pide confirmación. La versión anterior pasa
+   al historial.
+
+El rol **consulta** puede ver todo, pero no ve los botones de edición; la API también
+rechaza cualquier cambio que intente.
+
 ## Pruebas y estilo
 
 ```bash

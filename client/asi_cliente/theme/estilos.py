@@ -15,6 +15,7 @@ PALETAS = {
         "acento": "#1d4ed8",
         "acento_texto": "#ffffff",
         "error": "#b91c1c",
+        "advertencia": "#b45309",
     },
     "oscuro": {
         "fondo": "#16191d",
@@ -28,6 +29,7 @@ PALETAS = {
         "acento": "#4f83f1",
         "acento_texto": "#ffffff",
         "error": "#f87171",
+        "advertencia": "#fbbf24",
     },
 }
 
@@ -55,6 +57,29 @@ QListWidget#menu::item:selected { background: $lateral_activo; color: #ffffff; }
 QWidget#lateral QPushButton {
     background: transparent; color: $lateral_texto; border: 1px solid $lateral_activo;
 }
+QPushButton:disabled { color: $texto_suave; }
+QLabel#advertencia { color: $advertencia; }
+QTableWidget, QTableView {
+    background: $superficie; alternate-background-color: $fondo; gridline-color: $borde;
+    border: 1px solid $borde; border-radius: 6px;
+    selection-background-color: $acento; selection-color: $acento_texto;
+}
+QHeaderView::section {
+    background: $fondo; color: $texto_suave; border: none; border-bottom: 1px solid $borde;
+    border-right: 1px solid $borde; padding: 6px; font-weight: 600;
+}
+QComboBox, QDateEdit, QSpinBox {
+    background: $superficie; border: 1px solid $borde; border-radius: 6px; padding: 6px 8px;
+}
+QComboBox:focus, QDateEdit:focus, QSpinBox:focus { border-color: $acento; }
+QTabWidget::pane { border: 1px solid $borde; border-radius: 6px; padding: 8px; }
+QTabBar::tab {
+    background: $fondo; color: $texto_suave; padding: 8px 18px; border: 1px solid $borde;
+    border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px;
+}
+QTabBar::tab:selected { background: $superficie; color: $texto; font-weight: 600; }
+QSplitter::handle { background: transparent; }
+QTableWidget#cuadricula { font-size: 12px; }
 """)
 
 

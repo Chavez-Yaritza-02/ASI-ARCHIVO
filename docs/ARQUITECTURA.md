@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 1b.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 2.
 
 ## 1. Objetivo
 
@@ -71,7 +71,8 @@ ASI-ARCHIVO/
 ├── pyproject.toml          # espacio de trabajo uv, ruff y pytest
 ├── uv.lock                 # versiones exactas de dependencias
 ├── .env.example            # plantilla de configuración (sin secretos)
-├── shared/asi_shared/      # constantes comunes: estados de asistencia, permisos
+├── conftest.py             # las pruebas de interfaz se dibujan sin abrir ventanas
+├── shared/asi_shared/      # constantes comunes: estados, días, permisos
 ├── server/
 │   ├── alembic.ini
 │   ├── migrations/         # migraciones de la base de datos
@@ -81,12 +82,15 @@ ASI-ARCHIVO/
 │   │   ├── api/            # endpoints por módulo + dependencias de permisos
 │   │   ├── core/           # configuración y seguridad
 │   │   ├── db/             # conexión a PostgreSQL
-│   │   └── models/         # tablas (SQLAlchemy)
+│   │   ├── models/         # tablas (SQLAlchemy)
+│   │   ├── schemas/        # validación de entrada y salida (Pydantic)
+│   │   └── services/       # reglas de negocio y auditoría
 │   └── tests/
 ├── client/
 │   ├── asi_cliente/
 │   │   ├── main.py         # arranque de la app de escritorio
 │   │   ├── api/            # cliente HTTP hacia la API
+│   │   ├── cuadricula.py   # conversión bloques ⇄ cuadrícula semanal
 │   │   ├── views/          # ventanas y pantallas
 │   │   └── theme/          # temas claro y oscuro
 │   └── tests/
@@ -97,8 +101,8 @@ ASI-ARCHIVO/
 └── .github/workflows/      # pruebas automáticas
 ```
 
-Se agregarán carpetas solo cuando se necesiten: `server/app/services/` y
-`server/app/importers/` (Etapa 3), `server/app/reports/` (Etapa 7) y `deploy/` (Etapa 8).
+Se agregarán carpetas solo cuando se necesiten: `server/app/importers/` (Etapa 3),
+`server/app/reports/` (Etapa 7) y `deploy/` (Etapa 8).
 
 ## 5. Modelo de datos
 
@@ -112,23 +116,60 @@ Se agregarán carpetas solo cuando se necesiten: `server/app/services/` y
 | `rol_permiso`, `usuario_rol` | Relaciones muchos a muchos |
 | `auditoria` | Quién hizo qué, cuándo y desde qué IP; valores antes/después en JSONB. **Solo inserción** (lo garantiza un *trigger*) |
 
-**Roles iniciales:** `administrador` tiene los 12 permisos. `consulta` solo tiene los
+**Roles iniciales:** `administrador` tiene los 13 permisos. `consulta` solo tiene los
 permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin tocar código.
 
+### Implementado en la Etapa 2
+
+| Tabla | Propósito |
+|---|---|
+| `docente` | Nombre (como en los horarios institucionales), `nombre_normalizado` único (sin acentos, evita duplicados), nómina única, correo, activo |
+| `asignatura` | Materias (`tipo = materia`, requieren grupo) y otras actividades (`tipo = actividad`: gestión, tutoría, residencia…). Nombre normalizado único sin signos: "CÁLC. DIF." = "calc dif" |
+| `grupo`, `aula` | Clave única en mayúsculas ("A", "M05", "SALA EM") y descripción |
+| `periodo` | Nombre, fechas, estado `borrador / activo / cerrado`. Índice único parcial: **solo un periodo activo**. Las fechas de dos periodos no pueden traslaparse |
+| `horario` | Una **versión** del horario de un docente en un periodo: número de versión, estado, origen (`manual / pdf / excel / csv`), fecha y versión del documento institucional, versión base, quién lo creó y quién lo confirmó. Índice único parcial: **una sola versión vigente por docente y periodo** |
+| `bloque_horario` | Día (0 = lunes … 5 = sábado), hora de inicio y fin, asignatura, grupo y aula. Los horarios **por grupo** (Etapa 5) se obtendrán de esta misma tabla |
+
+Ningún catálogo se borra: se desactiva. Un registro inactivo sigue apareciendo en los
+horarios antiguos, pero no puede usarse en horarios nuevos.
+
+#### Ciclo de vida de un horario
+
+```
+                 confirmar (horarios.confirmar)          otra versión confirmada
+   borrador ───────────────────────────────▶ vigente ──────────────────────────▶ histórico
+      │
+      └── descartar ──▶ descartado
+```
+
+- Solo los **borradores** se editan. Para cambiar un horario vigente se crea una nueva
+  versión (copia de la vigente), se edita y se confirma. La anterior pasa a histórico
+  con todos sus bloques: el historial nunca se pierde.
+- **Errores** que impiden guardar un borrador: bloques que se traslapan o se repiten,
+  hora de fin anterior a la de inicio, materia sin grupo, catálogo inexistente o inactivo.
+- **Advertencias** que piden aceptación explícita al confirmar: el aula ya la ocupa otro
+  docente a esa hora (en sus horarios vigentes del mismo periodo), o la versión es
+  idéntica a la vigente (probable duplicado).
+- Un periodo **cerrado** deja todos sus horarios en solo lectura. Un docente **inactivo**
+  no recibe versiones nuevas.
+- Cada operación queda en `auditoria` con los valores antes y después (los bloques
+  completos, en el caso de las ediciones).
+
+#### Endpoints
+
+| Recurso | Rutas | Permiso para leer / modificar |
+|---|---|---|
+| Docentes | `GET/POST /docentes`, `GET/PATCH /docentes/{id}`, `POST /docentes/{id}/activar\|desactivar` | `docentes.ver` / `docentes.editar` |
+| Asignaturas, grupos, aulas | Igual que docentes, en `/asignaturas`, `/grupos`, `/aulas` | `horarios.ver` / `horarios.editar` |
+| Periodos | `GET/POST /periodos`, `GET /periodos/activo`, `PUT /periodos/{id}`, `POST /periodos/{id}/activar\|cerrar` | `horarios.ver` / `periodos.gestionar` |
+| Horarios | `GET/POST /horarios`, `GET/PATCH /horarios/{id}`, `PUT /horarios/{id}/bloques`, `POST /horarios/{id}/descartar` | `horarios.ver` / `horarios.editar` |
+| Confirmar vigente | `POST /horarios/{id}/confirmar` (`aceptar_advertencias`) | `horarios.confirmar` |
+
+Las reglas de negocio responden con `{"detail": mensaje, "problemas": [...]}` y un
+código 4xx (404 no existe, 409 conflicto, 422 datos inválidos). La documentación
+interactiva completa está en `/docs` con la API en marcha.
+
 ### Planeado
-
-**Catálogos (Etapa 2)**
-- `docente`: nombre, apellidos, nombre_normalizado (sin acentos, para búsqueda), activo.
-- `asignatura`, `grupo`, `aula`, `tipo_actividad`.
-
-**Periodos y horarios (Etapa 2)**
-- `periodo`: nombre, fechas, estado `borrador | activo | cerrado`. Un índice único
-  parcial garantiza que solo haya un periodo activo.
-- `horario`: docente, periodo, versión, origen (`manual | pdf | excel | csv`),
-  documento de origen, `vigente_desde` y `vigente_hasta`.
-- `bloque_horario`: día de la semana, hora de inicio y fin, asignatura, grupo, aula y
-  tipo de actividad. Los horarios **por grupo** se obtienen de esta misma tabla, así
-  que no hay datos duplicados ni inconsistencias.
 
 **Importación (Etapa 3)**
 - `lote_importacion`: un ZIP, quién lo subió y su estado.
@@ -192,8 +233,8 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 ## 8. Producto mínimo viable
 
 1. Inicio de sesión con roles. ✅ (Etapa 1)
-2. Docentes y periodos.
-3. Horarios: captura manual e importación asistida del ZIP de PDFs.
+2. Docentes y periodos. ✅ (Etapa 2)
+3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs (Etapa 3).
 4. Bitácora diaria con registro de estado, motivo, justificante e historial.
 5. Buscador con "¿dónde debería estar ahora?".
 6. Servidor desplegado con HTTPS y respaldos.
@@ -204,8 +245,8 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 |---|---|---|
 | 1 | Estructura, entorno, base de datos, autenticación, ventana de login, CI | ✅ Completa |
 | 1b | Prueba de OCR con los PDFs reales (solo local) | ✅ Completa ([resultados](EVALUACION_OCR.md)) |
-| 2 | Docentes, periodos, captura y edición de horarios con versiones | Siguiente (pendiente de autorización) |
-| 3 | Importación ZIP → PDF → texto/OCR → vista previa editable | |
+| 2 | Docentes, periodos, catálogos, captura y edición de horarios con versiones | ✅ Completa |
+| 3 | Importación ZIP → PDF → texto/OCR → vista previa editable | Siguiente (pendiente de autorización) |
 | 4 | Bitácora diaria y registro de asistencia | |
 | 5 | Buscador, horarios por grupo, cruces, ubicación programada | |
 | 6 | Archivo digital de documentos | |
@@ -224,3 +265,9 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 | 2026-11-04 | Encabezado del horario desde el código QR | Exacto y gratuito; el OCR del encabezado queda como respaldo |
 | 2026-11-04 | OCR por columna, modelo `eng`, sin diccionario | 100% día/hora y grupo, 97% aula, frente a 81% del primer intento |
 | 2026-11-04 | Catálogos de aulas y asignaturas para corregir el OCR | Aula 99.4%; solo se corrige con coincidencia única, si no se marca para revisión |
+| 2026-11-04 | Horarios inmutables una vez confirmados; cambios = nueva versión | Conserva el historial exacto que la asistencia necesitará en la Etapa 4 |
+| 2026-11-04 | Permiso nuevo `horarios.confirmar` | La versión vigente la decide un administrador de forma explícita |
+| 2026-11-04 | Choque de aula entre docentes = advertencia, no error | Hay casos reales (aulas compartidas, eventos); el administrador decide |
+| 2026-11-04 | Activar un periodo exige cerrar antes el activo | Evita cambiar de semestre por accidente |
+| 2026-11-04 | Grupo como catálogo simple (clave) | Los PDF solo muestran una letra; la relación grupo–carrera–semestre se definirá con la Jefatura |
+| 2026-11-04 | Cuadrícula de horas exactas en la interfaz | Igual al formato institucional; la API admite horas no exactas y la interfaz lo avisa |

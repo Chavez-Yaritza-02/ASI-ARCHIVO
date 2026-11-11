@@ -22,6 +22,7 @@ dev = [
     "asi-server",
     "asi-cliente",
     "pytest>=8.3",
+    "pytest-qt>=4.4",
     "ruff>=0.8",
 ]
 # Solo para la herramienta de prueba de OCR (requiere Tesseract instalado en el sistema):

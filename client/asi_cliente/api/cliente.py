@@ -15,7 +15,12 @@ _HOSTS_LOCALES = {"localhost", "127.0.0.1", "::1"}
 
 
 class ErrorApi(Exception):
-    """Error mostrable al usuario."""
+    """Error mostrable al usuario. `problemas` trae el detalle (p. ej. cada traslape)."""
+
+    def __init__(self, mensaje: str, problemas: list[str] | None = None, estado: int = 0):
+        super().__init__(mensaje)
+        self.problemas = problemas or []
+        self.estado = estado
 
 
 @dataclass
@@ -39,9 +44,18 @@ def validar_url(url: str) -> str:
 
 
 class ClienteApi:
-    def __init__(self, url: str | None = None, transporte: httpx.BaseTransport | None = None):
-        url = url or os.environ.get("ASI_SERVIDOR_URL", "http://127.0.0.1:8000")
-        self._http = httpx.Client(base_url=validar_url(url), timeout=15, transport=transporte)
+    def __init__(
+        self,
+        url: str | None = None,
+        transporte: httpx.BaseTransport | None = None,
+        http: httpx.Client | None = None,
+    ):
+        """`http` permite inyectar un cliente ya configurado (las pruebas de integración
+        usan el TestClient de FastAPI para hablar con la API real sin abrir un puerto)."""
+        if http is None:
+            url = url or os.environ.get("ASI_SERVIDOR_URL", "http://127.0.0.1:8000")
+            http = httpx.Client(base_url=validar_url(url), timeout=15, transport=transporte)
+        self._http = http
         self._token: str | None = None
         self.usuario: UsuarioSesion | None = None
 
@@ -83,6 +97,21 @@ class ClienteApi:
         except httpx.HTTPError:
             return False
 
+    # --- datos -----------------------------------------------------------
+
+    def get(self, ruta: str, **params):
+        params = {k: v for k, v in params.items() if v is not None}
+        return self._peticion("GET", ruta, params=params).json()
+
+    def post(self, ruta: str, datos: dict | list | None = None):
+        return self._peticion("POST", ruta, json=datos if datos is not None else {}).json()
+
+    def put(self, ruta: str, datos: dict | list):
+        return self._peticion("PUT", ruta, json=datos).json()
+
+    def patch(self, ruta: str, datos: dict):
+        return self._peticion("PATCH", ruta, json=datos).json()
+
     # --- internos -------------------------------------------------------
 
     def _cargar_usuario(self) -> UsuarioSesion:
@@ -100,9 +129,21 @@ class ClienteApi:
         except httpx.HTTPError as error:
             raise ErrorApi("No se pudo conectar con el servidor") from error
         if r.status_code >= 400:
+            problemas: list[str] = []
             try:
-                detalle = r.json().get("detail", r.text)
+                cuerpo = r.json()
+                detalle = cuerpo.get("detail", r.text)
+                problemas = cuerpo.get("problemas", [])
             except ValueError:
                 detalle = r.text
-            raise ErrorApi(str(detalle))
+            if isinstance(detalle, list):  # errores de validación de FastAPI (422)
+                problemas = [_error_validacion(e) for e in detalle]
+                detalle = "Datos inválidos"
+            raise ErrorApi(str(detalle), problemas, r.status_code)
         return r
+
+
+def _error_validacion(error: dict) -> str:
+    campo = ".".join(str(p) for p in error.get("loc", [])[1:])
+    mensaje = error.get("msg", "valor inválido").removeprefix("Value error, ")
+    return f"{campo}: {mensaje}" if campo else mensaje

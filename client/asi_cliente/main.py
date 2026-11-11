@@ -48,7 +48,7 @@ class Aplicacion:
             usuario = login.usuario
             self.preferencias.setValue("ultimo_correo", usuario.correo)
 
-        self.ventana = VentanaPrincipal(usuario)
+        self.ventana = VentanaPrincipal(usuario, self.api)
         self.ventana.cambiar_tema.connect(self.alternar_tema)
         self.ventana.cerrar_sesion.connect(self.salir_de_sesion)
         self.ventana.show()
