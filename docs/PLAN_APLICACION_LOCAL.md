@@ -1,7 +1,8 @@
 # Plan técnico: ASI-ARCHIVO como aplicación local para una sola computadora Windows
 
-> **Estado: análisis para autorizar.** No se ha migrado nada, no se ha borrado ninguna base
-> y la versión que funciona (`entrega-v1`, servidor con PostgreSQL) no cambia.
+> **Estado: plan aprobado; etapa 2 (compatibilidad con SQLite) autorizada.** No se ha
+> migrado nada, no se ha borrado ninguna base y la versión que funciona (`entrega-v1`,
+> servidor con PostgreSQL) no cambia. Decisiones registradas en la sección 10.
 > El rediseño de asistencia sigue en su rama (`asistencia-rediseno`), sin merge.
 
 ## 1. Resultado que se busca
@@ -76,9 +77,25 @@ Cambios necesarios, sin tocar las reglas del negocio:
 5. **Clave de sesiones** generada en la primera ejecución y guardada protegida por Windows
    (DPAPI, mediante el llavero del sistema).
 
-**Usuarios y auditoría se conservan.** Aunque sea una sola computadora, pueden trabajar en
-ella la Jefatura y su asistente, y la auditoría debe decir quién registró o corrigió cada
-asistencia. Se mantiene el inicio de sesión, con la opción «Recordar sesión».
+**Una sola cuenta de administrador (decisión 2).**
+
+- Una cuenta con usuario y contraseña, con acceso a todas las funciones. No hay pantalla
+  para crear ni administrar otros usuarios.
+- El código de roles y permisos se conserva por dentro: el administrador los tiene todos.
+  Así no se reescriben reglas probadas y la auditoría sigue registrando quién hizo cada cambio.
+- **Las cuentas que ya existen en los datos trasladados no se borran.** Se conservan
+  desactivadas, porque la auditoría histórica las menciona. La historia no se modifica.
+- **Cambiar la contraseña:** Administración › Cambiar contraseña. Pide la actual y la nueva,
+  y queda en la auditoría.
+- **Recuperar la contraseña sin internet:** al configurar la aplicación por primera vez se
+  genera un **código de recuperación**. Se muestra una sola vez y se puede imprimir o guardar
+  en un **kit de recuperación** (PDF) para tenerlo fuera de la computadora. En la pantalla de
+  inicio, «¿Olvidaste tu contraseña?» pide ese código y permite poner una contraseña nueva.
+  Después se genera un código nuevo y el anterior deja de servir. En la base solo se guarda la
+  huella del código, nunca el código. Los intentos fallidos tienen el mismo límite que el
+  inicio de sesión y todo queda en la auditoría.
+- **Si se pierden la contraseña y el código, no hay otra forma de entrar** sin acceso técnico
+  a la base. Por eso el kit se guarda fuera de la computadora.
 
 ## 4. Archivos: PDF, imágenes y justificantes
 
@@ -124,10 +141,14 @@ se daña o la computadora se pierde.
 Al reinstalar, la aplicación los encuentra sola. En una computadora nueva, la primera
 pantalla ofrece **Restaurar desde un respaldo** (archivo `.asiresp`).
 
-**Cifrado (decisión pendiente):** se pueden cifrar los respaldos con una contraseña de
-recuperación. Protege si alguien copia el archivo, pero **sin esa contraseña no hay forma de
-recuperarlos**. Recomendación: cifrar la copia externa y guardar la contraseña en sobre
-cerrado o en el gestor institucional.
+**Cifrado (decisión 3):** todos los respaldos se cifran (AES-256) con una **contraseña de
+respaldos** que se define al configurar la aplicación. Se incluye en el kit de recuperación
+para guardarla fuera de la computadora. **Sin ella los respaldos no se pueden abrir.**
+La aplicación crea los respaldos sola, sin pedirla cada vez: la guarda protegida por Windows
+(DPAPI) en esa computadora. Para restaurar en una computadora nueva hay que escribirla.
+
+**Copia externa (decisión 4):** respaldos en la computadora y botón **Copiar a USB**, que
+también avisa si hace días que no se hace una copia externa.
 
 ## 6. Instalación y actualizaciones
 
@@ -145,8 +166,18 @@ cerrado o en el gestor institucional.
 
 ## 7. Migración de los datos actuales sin perder información
 
-**Primero hay que decidir qué datos pasan a la versión local** (ver decisiones): empezar
-limpio y cargar los datos reales en la versión local, o trasladar una base existente.
+**Qué datos pasan (decisión 1):** los **26 PDF reales** y toda la información verdadera de
+docentes y horarios. **No** se trasladan asistencias ni registros de prueba.
+
+**Antes de trasladar, un inventario para separar lo real de lo de prueba** (solo lectura):
+- Por tabla y por registro: quién lo creó, cuándo y desde dónde (auditoría). Por ejemplo, las
+  cuentas `@prueba.local`, las altas hechas por pruebas automáticas y las capturas hechas
+  durante las revisiones.
+- Docentes: los que aparecen en los PDF importados contra los creados a mano para probar
+  (por ejemplo, «DOCENTE PRUEBA …»).
+- Asistencias, horarios en borrador y catálogos creados en las demostraciones.
+- El inventario se entrega como reporte para que **tú confirmes registro por registro**
+  qué es real antes de trasladar nada.
 
 Herramienta de traslado `exportar-a-local` (se ejecuta una vez):
 
@@ -172,14 +203,14 @@ bases **no se eliminan** hasta que la versión local pase la aceptación.
 
 | # | Etapa | Entregable | Cómo se comprueba |
 |---|---|---|---|
-| 0 | Decisiones (sección 10) | Respuestas por escrito | — |
-| 1 | Base compatible con SQLite y PostgreSQL | Tipos, triggers, reglas y migración inicial SQLite | La suite completa pasa **en ambas** bases |
-| 2 | Modo local integrado | La aplicación arranca sola con SQLite, primera ejecución, OCR en segundo plano, instancia única | Pruebas de arranque, OCR sin congelar la ventana y cierre y reapertura sin pérdida |
-| 3 | Archivo digital local | Carpeta local y Defender | Carga, versiones, inmutabilidad, archivo de prueba EICAR rechazado |
-| 4 | Respaldos y restauración | Respaldos automáticos, verificación, restauración y copia externa | Restaurar en limpio y comparar; corte de energía simulado |
-| 5 | Traslado de datos | Herramienta `exportar-a-local` e informe | Ensayos con bases ficticias y luego con una copia autorizada |
-| 6 | Instalador | `.exe` con todo incluido; actualización y desinstalación sin perder datos | Windows 10 y 11 limpios: instalar, usar, actualizar, desinstalar, reinstalar y encontrar los datos |
-| 7 | Aceptación | Uso real supervisado en la computadora de la Jefatura | Lista de aceptación firmada; solo entonces se decide retirar el servidor |
+| 1 | Decisiones (sección 10) | Respuestas por escrito | Registradas |
+| 2 | Base compatible con SQLite y PostgreSQL | Tipos, triggers, reglas y migración inicial SQLite | La suite completa pasa **en ambas** bases |
+| 3 | Modo local integrado, cuenta única y recuperación | La aplicación arranca sola con SQLite, primera ejecución, OCR en segundo plano, instancia única | Pruebas de arranque, OCR sin congelar la ventana y cierre y reapertura sin pérdida |
+| 4 | Archivo digital local | Carpeta local y Defender | Carga, versiones, inmutabilidad, archivo de prueba EICAR rechazado |
+| 5 | Respaldos cifrados y restauración | Respaldos automáticos, verificación, restauración y copia externa | Restaurar en limpio y comparar; corte de energía simulado |
+| 6 | Inventario real/prueba y traslado de datos | Herramienta `exportar-a-local` e informe | Ensayos con bases ficticias y luego con una copia autorizada |
+| 7 | Instalador | `.exe` con todo incluido; actualización y desinstalación sin perder datos | Windows 10 y 11 limpios: instalar, usar, actualizar, desinstalar, reinstalar y encontrar los datos |
+| 8 | Aceptación | Uso real supervisado en la computadora de la Jefatura | Lista de aceptación firmada; solo entonces se decide retirar el servidor |
 
 Cada etapa en su rama y PR, **sin merge** hasta tu autorización.
 
@@ -199,19 +230,22 @@ Cada etapa en su rama y PR, **sin merge** hasta tu autorización.
 | OneDrive o carpetas sincronizadas corrompen la base | Datos en `%LOCALAPPDATA%` (no se sincroniza); aviso si se elige una carpeta sincronizada para la copia externa |
 | Datos reales en entornos de prueba | Ensayos solo con bases ficticias o copias autorizadas, como hasta ahora |
 
-## 10. Decisiones que necesito antes de implementar
+## 10. Decisiones registradas
 
-1. **Datos iniciales:** ¿empezar limpio y cargar los datos reales en la versión local, o
-   trasladar una base existente? ¿Cuál? La demostración tiene los 26 PDF reales; la de
-   revisión es ficticia.
-2. **Usuarios:** ¿se conserva el inicio de sesión con varias cuentas (recomendado por la
-   auditoría) o solo una?
-3. **Cifrado de respaldos y dónde se guarda la contraseña de recuperación.**
-4. **Copia externa:** ¿carpeta de red, memoria USB o ambas?
-5. **Antivirus:** ¿la computadora usa Microsoft Defender?
-6. **Firma digital del instalador:** ¿hay certificado institucional o se acepta el aviso de
-   SmartScreen?
-7. **Versión de Windows** de la computadora (10 22H2 u 11) y espacio libre en disco.
+1. **Datos:** conservar los 26 PDF reales y la información verdadera de docentes y horarios;
+   no trasladar asistencias ficticias. Antes, inventario de lo real y lo de prueba.
+2. **Usuarios:** una sola cuenta de administrador, con cambio y recuperación de contraseña
+   sin internet. Se conservan la auditoría y el historial completos.
+3. **Respaldos:** automáticos, cifrados y restaurables; contraseña de recuperación guardada
+   fuera de la computadora (kit de recuperación).
+4. **Copia externa:** en la computadora y opción de copiar a una memoria USB.
+5. **Antivirus:** Microsoft Defender cuando esté disponible.
+6. **Instalador:** sin certificado por ahora. Windows SmartScreen mostrará «Windows protegió
+   su PC · Editor desconocido» la primera vez; se continúa con **Más información › Ejecutar
+   de todas formas**. Algunos antivirus pueden revisar el instalador unos segundos. El manual
+   lo explicará con imágenes.
+7. **Computadora:** antes del instalador definitivo se verificarán versión de Windows,
+   arquitectura de 64 bits, espacio libre, si Defender está activo y si hay puerto USB.
 
 ## 11. Pruebas para autorizar la implementación
 
