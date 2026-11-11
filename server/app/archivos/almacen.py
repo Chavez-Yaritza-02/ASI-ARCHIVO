@@ -230,10 +230,11 @@ def _antivirus_defender(ruta) -> bool:
 
 def _antivirus(ruta):
     cfg = obtener_configuracion()
-    if cfg.archivo_usar_defender and _antivirus_defender(ruta):
+    # getattr: configuraciones simplificadas (p. ej. en pruebas) pueden no traer estas opciones.
+    if getattr(cfg, "archivo_usar_defender", False) and _antivirus_defender(ruta):
         return
     if not cfg.archivo_antivirus_cmd:
-        if cfg.entorno == "local":
+        if getattr(cfg, "entorno", None) == "local":
             # Una sola computadora: la protección en tiempo real de Windows revisa el
             # archivo al escribirlo aunque el análisis explícito no esté disponible.
             return
