@@ -47,7 +47,7 @@ class EventoCalendario(ConFechas, Base):
 
 
 class Asistencia(ConFechas, Base):
-    """Registro real de un docente en un día y turno (asistencia general, no por clase)."""
+    """Registro legado por día y turno; no acredita horas en AsistenciaHora."""
 
     __tablename__ = "asistencia"
     __table_args__ = (

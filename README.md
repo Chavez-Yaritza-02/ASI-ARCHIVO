@@ -129,9 +129,30 @@ GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](
 Las páginas repetidas (mismo QR) se marcan como *Duplicada*, y un PDF ya importado no se
 vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
 
-## Uso: bitácora diaria (Etapa 4)
+## Uso: asistencia por hora de clase (ampliación de Etapa 4)
 
-- **Bitácora del día:** elige la fecha (◀ ▶ u «Hoy»). Aparecen los docentes con
+**Asistencia por hora** es ahora la primera pantalla. Cada hora programada se captura
+por separado: un docente puede asistir a una y faltar a otra del mismo día. Elige fecha,
+docente, turno y **Solo clases** para consultar materias; también puedes incluir otras
+actividades programadas.
+
+- Registra **Asistió**, **Retardo**, **Falta**, **Justificado** o **Parcial** por fila.
+- Para un parcial, indica entrada/salida dentro del tramo y los minutos justificados,
+  si existen, con su motivo. Las fracciones de hora se conservan en minutos exactos.
+- Cada corrección exige motivo y deja historial; las de días anteriores requieren autorización.
+- Exporta el día o un rango a PDF/Excel. Los reportes calculan horas programadas,
+  cumplidas, faltantes y justificadas; muestran pendientes y suspensiones separadamente.
+- Las capturas anteriores por turno se conservan y **no se convierten automáticamente**
+  ni acreditan horas. Si cambia una vigencia, las capturas que ya no coinciden con el
+  programa se conservan aparte con aviso, sin duplicar sus créditos.
+
+Consulta [reglas, auditoría, API y pruebas de asistencia por hora](docs/ASISTENCIA_POR_HORA.md).
+La migración nueva `a4h001` agrega una tabla sin modificar datos previos; su aplicación
+en bases con datos requiere una intervención autorizada. La Etapa 6 no se ha iniciado.
+
+## Uso: bitácora por turno conservada (Etapa 4 original)
+
+- **Bitácora del día** (legado por turno, sin equivalencia automática en horas): elige la fecha (◀ ▶ u «Hoy»). Aparecen los docentes con
   actividades ese día según el horario que regía en esa fecha, un renglón por turno
   (matutino antes de las 14:00, vespertino desde las 14:00).
   - Doble clic o «Registrar / corregir»: estado, hora real de entrada y salida,

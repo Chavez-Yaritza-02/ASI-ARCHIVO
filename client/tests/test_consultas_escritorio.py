@@ -4,6 +4,7 @@ import httpx
 from PySide6.QtCore import QDate, QTime
 
 from asi_cliente.api.cliente import ClienteApi, UsuarioSesion
+from asi_cliente.views.asistencia_hora import VistaAsistenciaHora
 from asi_cliente.views.consultas import (
     VistaBuscador,
     VistaConfiguracionAsistencia,
@@ -21,6 +22,27 @@ def test_consultas_portables_sin_base_de_datos(qtbot):
             datos = {"fecha": "2026-11-02", "hora": "07:30:00", "zona": "America/Mexico_City"}
         elif ruta == "/configuracion/asistencia":
             datos = {"tolerancia_minutos": 10}
+        elif ruta == "/bitacora/horas":
+            metricas = (
+                "programadas",
+                "exigibles",
+                "cumplidas",
+                "faltantes",
+                "justificadas",
+                "pendientes",
+                "suspendidas",
+            )
+            datos = {
+                "fecha": "2026-11-02",
+                "filas": [],
+                "registros_fuera_de_programacion": [],
+                "registros_por_turno_sin_convertir": [],
+                "aviso": "Ficticio",
+                "totales": {
+                    "minutos": dict.fromkeys(metricas, 0),
+                    "horas": dict.fromkeys(metricas, 0),
+                },
+            }
         elif ruta == "/buscador":
             datos = {
                 k: {"total": 0, "resultados": []}
@@ -38,7 +60,13 @@ def test_consultas_portables_sin_base_de_datos(qtbot):
         ["consulta"],
         ["docentes.ver", "horarios.ver", "asistencia.ver"],
     )
-    for clase in (VistaBuscador, VistaGrupos, VistaUbicacion, VistaConfiguracionAsistencia):
+    for clase in (
+        VistaAsistenciaHora,
+        VistaBuscador,
+        VistaGrupos,
+        VistaUbicacion,
+        VistaConfiguracionAsistencia,
+    ):
         vista = clase(api, usuario)
         qtbot.addWidget(vista)
         vista.show()
