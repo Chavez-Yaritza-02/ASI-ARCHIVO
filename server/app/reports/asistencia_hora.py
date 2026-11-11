@@ -31,9 +31,9 @@ ENCABEZADOS = [
     "Actividad / grupo / aula",
     "Programado",
     "Estado",
-    "Cumplidos min",
-    "Faltantes min",
-    "Justificados min",
+    "Cumpl. min",
+    "Falta min",
+    "Justif. min",
     "Observaciones",
 ]
 AVISO = (
@@ -108,6 +108,8 @@ def exportar(datos, formato):
         for fila in resumen:
             tot.append(fila)
         tot.append(["Registros por turno sin convertir", legados])
+        for columna, ancho in {"A": 42, "B": 20, "C": 22}.items():
+            tot.column_dimensions[columna].width = ancho
         docentes = libro.create_sheet("Por docente")
         docentes.append(
             [
@@ -122,6 +124,11 @@ def exportar(datos, formato):
         anteriores = libro.create_sheet("Fuera de programación")
         anteriores.append(["Historial conservado; excluido de los totales actuales"])
         anteriores.append(ENCABEZADOS)
+        for i, ancho in enumerate([13, 32, 40, 15, 24, 16, 16, 18, 50], 1):
+            anteriores.column_dimensions[get_column_letter(i)].width = ancho
+        docentes.column_dimensions["A"].width = 32
+        for i in range(2, 16):
+            docentes.column_dimensions[get_column_letter(i)].width = 18
         for f in fuera:
             anteriores.append(_fila(f))
         for cargo, puesto in FIRMAS:

@@ -63,7 +63,8 @@ def limpiar_datos(base_de_datos):
                 "TRUNCATE usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
                 "periodo, horario, bloque_horario, importacion, importacion_documento, "
                 "importacion_pagina, importacion_celda, calendario_evento, asistencia, "
-                "incidencia, asistencia_hora RESTART IDENTITY CASCADE"
+                "incidencia, asistencia_hora, documento_asistencia, documento_version, documento "
+                "RESTART IDENTITY CASCADE"
             )
         )
         conexion.execute(text("ALTER TABLE auditoria ENABLE TRIGGER trg_auditoria_inmutable"))
@@ -106,3 +107,20 @@ def como_admin(cliente, admin):
 def como_consulta(cliente, consulta):
     """Encabezados de autenticación de un usuario de solo consulta."""
     return _encabezados(cliente, consulta.correo)
+
+
+@pytest.fixture
+def almacen_documentos(tmp_path, monkeypatch):
+    """Cada prueba de archivos tiene almacén temporal marcado, nunca el real."""
+    from app.core.config import obtener_configuracion
+
+    ruta = tmp_path / "archivo-privado-pruebas"
+    ruta.mkdir(mode=0o700)
+    marcador = ruta / ".asi-archivo-pruebas"
+    marcador.write_text("ASI-ARCHIVO-PRUEBAS")
+    marcador.chmod(0o600)
+    cfg = obtener_configuracion()
+    monkeypatch.setattr(cfg, "archivo_raiz", ruta)
+    monkeypatch.setattr(cfg, "archivo_requerir_antivirus", False)
+    monkeypatch.setattr(cfg, "archivo_antivirus_cmd", None)
+    return ruta

@@ -6,6 +6,12 @@ from app.models.auditoria import Auditoria
 from app.models.base import Base
 from app.models.catalogos import Asignatura, Aula, Docente, Grupo
 from app.models.configuracion import ConfiguracionAsistencia
+from app.models.documentos import (
+    CategoriaDocumento,
+    Documento,
+    DocumentoAsistencia,
+    VersionDocumento,
+)
 from app.models.horarios import BloqueHorario, Horario, Periodo
 from app.models.importacion import (
     CeldaImportada,
@@ -25,6 +31,10 @@ __all__ = [
     "BloqueHorario",
     "CeldaImportada",
     "Docente",
+    "CategoriaDocumento",
+    "Documento",
+    "VersionDocumento",
+    "DocumentoAsistencia",
     "ConfiguracionAsistencia",
     "DocumentoImportado",
     "EventoCalendario",

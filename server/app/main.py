@@ -14,13 +14,18 @@ from app.api import (
     bitacora,
     catalogos,
     consultas,
+    documentos,
     horarios,
     importaciones,
     periodos,
 )
+from app.archivos.limites import LimiteArchivoMiddleware
 from app.services.comun import ErrorNegocio
 
-app = FastAPI(title="ASI-ARCHIVO API", version="0.5.1")
+app = FastAPI(title="ASI-ARCHIVO API", version="0.6.0")
+
+app.add_middleware(LimiteArchivoMiddleware)
+app.include_router(documentos.router)
 app.include_router(auth.router)
 app.include_router(asistencia_hora.router)
 app.include_router(consultas.router)

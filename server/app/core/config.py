@@ -21,6 +21,10 @@ class Configuracion(BaseSettings):
     )
 
     entorno: str = "desarrollo"
+    archivo_raiz: Path = Path.home() / ".local" / "share" / "asi-archivo" / "documentos"
+    archivo_max_mb: int = Field(default=20, ge=1, le=50)
+    archivo_antivirus_cmd: Path | None = None
+    archivo_requerir_antivirus: bool = True
     database_url: str
     # Clave para firmar los tokens de sesión. Debe ser larga y aleatoria.
     secret_key: str = Field(min_length=32)

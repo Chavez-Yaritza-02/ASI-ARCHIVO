@@ -49,6 +49,16 @@ class CorreccionEntrada(BaseModel):
     justificacion: str | None = Field(None, max_length=1000)
 
 
+class LoteEntrada(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    registros: list[RegistroEntrada] = Field(min_length=1, max_length=100)
+
+
+@router.post("/asistencias/horas/lote", status_code=201)
+def registrar_lote(datos: LoteEntrada, sesion: SesionDB, usuario: Registrador):
+    return servicio.registrar_lote(sesion, usuario, [r.model_dump() for r in datos.registros])
+
+
 def filtros(
     docente_id: int | None = Query(None, ge=1),
     turno: Turno | None = None,

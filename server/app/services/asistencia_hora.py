@@ -293,7 +293,17 @@ def _bloquear_docente(sesion, docente_id):
         raise NoEncontrado("El docente")
 
 
-def registrar(sesion, usuario, docente_id, fecha, bloque_id, inicio, datos, autorizar=False):
+def registrar(
+    sesion,
+    usuario,
+    docente_id,
+    fecha,
+    bloque_id,
+    inicio,
+    datos,
+    autorizar=False,
+    confirmar_transaccion=True,
+):
     _bloquear_docente(sesion, docente_id)
     bitacora._exigir_periodo_abierto(sesion, fecha)
     if fecha > hoy() and datos["estado"] != "justificado":
@@ -344,8 +354,43 @@ def registrar(sesion, usuario, docente_id, fecha, bloque_id, inicio, datos, auto
         registro.id,
         despues=instantanea(registro, COPIA + CAMPOS),
     )
-    sesion.commit()
+    if confirmar_transaccion:
+        sesion.commit()
     return salida(registro)
+
+
+def registrar_lote(sesion, usuario, entradas):
+    """Una transacción, estados independientes y bloqueo ordenado por docente."""
+    try:
+        resultado = []
+        for entrada in sorted(
+            entradas, key=lambda e: (e["docente_id"], e["fecha"], e["programado_inicio"])
+        ):
+            identidad = {
+                "docente_id",
+                "fecha",
+                "bloque_id",
+                "programado_inicio",
+                "autorizar_dia_inhabil",
+            }
+            resultado.append(
+                registrar(
+                    sesion,
+                    usuario,
+                    entrada["docente_id"],
+                    entrada["fecha"],
+                    entrada["bloque_id"],
+                    entrada["programado_inicio"],
+                    {k: v for k, v in entrada.items() if k not in identidad},
+                    entrada.get("autorizar_dia_inhabil", False),
+                    confirmar_transaccion=False,
+                )
+            )
+        sesion.commit()
+        return resultado
+    except Exception:
+        sesion.rollback()
+        raise
 
 
 def obtener(sesion, id_):
