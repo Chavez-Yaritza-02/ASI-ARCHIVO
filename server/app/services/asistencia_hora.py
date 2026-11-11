@@ -81,6 +81,8 @@ def programacion(sesion, fecha):
                     "asignatura": b.asignatura.nombre,
                     "tipo_actividad": b.asignatura.tipo,
                     "grupo": b.grupo.clave if b.grupo else b.grupo_letra,
+                    # Solo para filtrar en pantalla; no forma parte de la copia registrada.
+                    "carrera": b.grupo.carrera if b.grupo else None,
                     "aula": b.aula.clave if b.aula else None,
                     "turno": turno,
                     "programado_inicio": inicio.time(),

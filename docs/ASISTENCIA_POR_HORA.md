@@ -107,6 +107,18 @@ copias del programa no se pueden inyectar en la captura o corrección por API.
 
 ## Aplicación gráfica y reportes
 
+**Registro rápido (pantalla principal):** una fila por tramo con los botones Asistió,
+Retardo, Falta y Justificado. Asistió y Falta se guardan con un clic (`POST
+/asistencias/horas`). Retardo pide en la fila la hora real de entrada; Justificado, el motivo.
+Cambiar un estado registrado es una corrección (`PATCH`) con motivo obligatorio. La
+observación se guarda con el registro o como corrección con motivo automático. Errores y
+confirmaciones se muestran en la fila, sin ventanas. Las tarjetas (horas programadas y
+cumplidas, retardos, faltas y pendientes) se calculan con las filas visibles. Los filtros de
+carrera, grupo, aula y búsqueda se aplican en pantalla; la API agrega `carrera` a cada fila
+programada solo para filtrar (no forma parte de la copia registrada). La pestaña **Vista
+detallada** conserva la pantalla anterior.
+
+
 «Asistencia por hora» es la primera sección del menú. Selecciona fecha, docente, turno,
 estado y tipo; cada fila permite registrar/corregir y abrir su historial. El formulario
 ofrece estado parcial, entrada, salida y minutos justificados. Los botones de captura

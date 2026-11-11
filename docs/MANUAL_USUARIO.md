@@ -88,35 +88,45 @@ están en **Mostrar más filtros** / **Mostrar filtros avanzados**.
 
 ## 5. Registrar la asistencia por hora (uso diario)
 
-**Asistencias › Registro por hora** (o, desde Inicio, **Registrar asistencia**):
+**Asistencias › Asistencia por hora** (o, desde Inicio, **Registrar asistencia**) se abre en
+**Registro rápido**, con las clases del día ordenadas por hora:
 
-1. Elige la **fecha** y pulsa **Consultar horas**. Aparece una fila por cada hora de clase
-   o actividad programada ese día.
-2. Selecciona una fila y pulsa **Registrar / corregir esta hora** (o doble clic).
-3. Elige el estado:
+- **Arriba:** la fecha, con ◀ ▶ y **Hoy**, y la búsqueda por docente, materia o aula.
+- **Filtros siempre visibles:** turno, carrera, grupo, aula, estado y tipo. Para quitarlos, **Limpiar filtros**.
+- **Resumen:** horas programadas, horas cumplidas, retardos, faltas y pendientes. Se calculan
+  con lo registrado y con los filtros que tengas puestos.
+- **Una fila por cada hora:** hora, docente, materia, grupo, aula y estado. Si un docente
+  tiene tres horas, aparecen tres filas y cada una se registra por separado.
 
-| Estado | Cuándo usarlo |
+**Registrar con los botones de cada fila:**
+
+| Botón | Qué pasa |
 |---|---|
-| **Asistió** | Cumplió la hora completa |
-| **Retardo** | Llegó tarde: escribe la hora real de entrada |
-| **Parcial** | Estuvo solo una parte: escribe entrada y salida |
-| **Falta** | No se presentó |
-| **Justificado** | No se presentó con justificación (escribe el motivo) |
+| 🟢 **Asistió** | Se guarda con un clic |
+| 🔴 **Falta** | Se guarda con un clic |
+| 🟡 **Retardo** | En la misma fila aparece la **hora real de llegada** (ya viene escrita; cámbiala si hace falta) → **Guardar** o Enter |
+| 🔵 **Justificado** | En la misma fila escribe el **motivo** → **Guardar**. Después, el botón **Justificante** permite adjuntar el documento (sección 8) |
 
-4. Pulsa **Guardar**.
+- El botón activo se rellena de color y la fila muestra «✓ Guardado» con la hora. Todo se
+  guarda en el momento; no hay que pulsar otro botón al final.
+- **Observación:** escríbela y pulsa Enter. En una hora pendiente se guarda junto con el registro.
+- **Cambiar un estado ya registrado** es una corrección: pulsa el estado correcto, escribe el
+  **motivo** y **Guardar**. Queda en el historial con tu nombre. Corregir días anteriores
+  solo lo puede hacer quien tenga autorización.
+- **Más…** abre la **asistencia parcial** (entrada y salida, minutos justificados), las
+  excepciones en días inhábiles y el **historial** de la hora.
+- Si escribiste algo y no lo guardaste, la aplicación avisa antes de cambiar de fecha o de cerrar.
 
-**Varias horas a la vez:** selecciona varias filas (Ctrl + clic) y pulsa
-**Registrar horas seleccionadas**. Si una falla, no se guarda ninguna; corrige y repite.
+**Vista detallada** (pestaña junto a «Registro rápido»): la tabla con todas las columnas, la
+captura de **varias horas a la vez** (Ctrl + clic y **Registrar horas seleccionadas**), los
+documentos de cada hora y los reportes del día o de un rango de fechas.
 
 **Importante:**
-- Una hora sin registrar aparece como **Pendiente**: el sistema **nunca** pone faltas solo.
+- Una hora sin registrar aparece como **Pendiente**: el sistema **nunca** pone faltas ni
+  asistencias solo.
 - En días inhábiles o suspensiones no se esperan registros (**Asistencias › Días inhábiles
   y eventos**).
-- **Corregir** un registro pide escribir el **motivo**. Corregir días anteriores solo lo
-  puede hacer quien tenga autorización.
-- **Historial de esta hora** muestra quién registró o cambió algo, cuándo y por qué.
-- **Documentos de esta hora** permite vincular un justificante (ver sección 8). Adjuntar
-  un documento **no** cambia el estado: hay que registrar «Justificado».
+- Adjuntar un documento **no** cambia el estado: hay que registrar «Justificado».
 
 **Asistencias › Bitácora del día** muestra el registro anterior por turno (matutino /
 vespertino) y sus incidencias; se conserva para consulta.
