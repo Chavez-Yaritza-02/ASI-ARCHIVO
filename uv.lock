@@ -167,6 +167,7 @@ name = "asi-cliente"
 version = "0.1.0"
 source = { editable = "client" }
 dependencies = [
+    { name = "asi-server" },
     { name = "asi-shared" },
     { name = "httpx" },
     { name = "keyring" },
@@ -176,6 +177,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "asi-server", editable = "server" },
     { name = "asi-shared", editable = "shared" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "keyring", specifier = ">=25.5" },

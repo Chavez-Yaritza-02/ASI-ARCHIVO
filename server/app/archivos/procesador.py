@@ -6,6 +6,7 @@ El proceso padre impone tamaño, tiempo y permisos de almacenamiento.
 
 import io
 import json
+import os
 import re
 import sys
 import warnings
@@ -84,7 +85,10 @@ def procesar(contenido, pagina=None):
         return salida.getvalue()
 
 
-def main():
+def main(argumentos: list[str] | None = None):
+    """`argumentos`: número de página opcional. Desde la aplicación empaquetada (modo
+    local) se llama con los argumentos que siguen a `--procesar-archivo`."""
+    argumentos = sys.argv[1:] if argumentos is None else argumentos
     # Límite adicional de CPU en los sistemas que lo soportan. Windows usa el timeout del padre.
     try:
         import resource
@@ -94,18 +98,23 @@ def main():
             resource.setrlimit(resource.RLIMIT_AS, (768 * 1024 * 1024, 768 * 1024 * 1024))
     except (ImportError, ValueError, OSError):
         pass
+    # En la aplicación de Windows sin consola, sys.stdin/stdout pueden no existir aunque el
+    # proceso padre haya conectado tuberías: se usan los descriptores directamente.
+    entrada = sys.stdin.buffer if sys.stdin else os.fdopen(0, "rb", closefd=False)
+    salida = sys.stdout.buffer if sys.stdout else os.fdopen(1, "wb", closefd=False)
     try:
-        contenido = sys.stdin.buffer.read(50 * 1024 * 1024 + 1)
+        contenido = entrada.read(50 * 1024 * 1024 + 1)
         if not contenido or len(contenido) > 50 * 1024 * 1024:
             raise ValueError("Tamaño no permitido")
-        resultado = procesar(contenido, int(sys.argv[1]) if len(sys.argv) > 1 else None)
-        if isinstance(resultado, bytes):
-            sys.stdout.buffer.write(resultado)
-        else:
-            print(json.dumps(resultado))
+        resultado = procesar(contenido, int(argumentos[0]) if argumentos else None)
+        if not isinstance(resultado, bytes):
+            resultado = (json.dumps(resultado) + "\n").encode()
+        salida.write(resultado)
+        salida.flush()
     except Exception:
         # No devolver detalles del parser o datos del documento al cliente.
-        print("Archivo inválido o no permitido", file=sys.stderr)
+        if sys.stderr:
+            print("Archivo inválido o no permitido", file=sys.stderr)
         sys.exit(2)
 
 

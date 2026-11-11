@@ -98,6 +98,7 @@ QLabel#franja_servidor[tipo="demostracion"] { background: #9a3412; }
 QLabel#franja_servidor[tipo="revision"] { background: #6d28d9; }
 QLabel#franja_servidor[tipo="desarrollo"] { background: #1e40af; }
 QLabel#franja_servidor[tipo="desconocido"] { background: #374151; }
+QLabel#franja_servidor[tipo="local"] { background: #166534; }
 
 /* --- Barra superior y menú lateral --- */
 QWidget#barra_superior { background: $superficie; border-bottom: 1px solid $borde; }

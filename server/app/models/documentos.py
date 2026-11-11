@@ -6,7 +6,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
-    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -16,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, ConFechas
+from app.models.base import Base, ConFechas, FechaHora
 
 
 class CategoriaDocumento(Base):
@@ -61,7 +60,7 @@ class VersionDocumento(Base):
     paginas: Mapped[int] = mapped_column(Integer)
     motivo: Mapped[str] = mapped_column(String(1000))
     subido_por_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
-    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    creado_en: Mapped[datetime] = mapped_column(FechaHora(), server_default=func.now())
 
 
 class DocumentoAsistencia(Base):
@@ -76,4 +75,4 @@ class DocumentoAsistencia(Base):
     asistencia_id: Mapped[int] = mapped_column(ForeignKey("asistencia_hora.id"), index=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     vinculado_por_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
-    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    creado_en: Mapped[datetime] = mapped_column(FechaHora(), server_default=func.now())

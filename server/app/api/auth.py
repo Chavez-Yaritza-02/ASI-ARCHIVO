@@ -38,7 +38,9 @@ def login(
     correo = form.username.strip().lower()
     ip = request.client.host if request.client else None
     # Serializar por IP evita que peticiones simultáneas eludan el contador.
-    sesion.execute(text("SELECT pg_advisory_xact_lock(hashtext(:ip))"), {"ip": ip or "sin-ip"})
+    # (En SQLite, modo local, las escrituras ya se hacen de una en una.)
+    if sesion.get_bind().dialect.name == "postgresql":
+        sesion.execute(text("SELECT pg_advisory_xact_lock(hashtext(:ip))"), {"ip": ip or "sin-ip"})
     fallos = sesion.scalar(
         select(func.count())
         .select_from(Auditoria)

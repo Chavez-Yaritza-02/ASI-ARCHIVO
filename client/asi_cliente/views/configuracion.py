@@ -4,13 +4,18 @@ No cambia datos del servidor. El tema y el cierre de sesión usan las mismas se�
 que los botones del menú lateral.
 """
 
+import os
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -106,9 +111,15 @@ class VistaConfiguracion(QWidget):
         atajos.setColumnStretch(1, 1)
         capa_atajos.addLayout(atajos)
 
+        paneles = [panel_cuenta, panel_conexion, panel_apariencia]
+        self.modo_local = os.environ.get("ASI_ENTORNO") == "local"
+        if self.modo_local:
+            paneles.insert(1, self._panel_respaldos())
+            panel_conexion.hide()  # en el modo local no hay servidor que configurar
+
         izquierda = QVBoxLayout()
         izquierda.setSpacing(14)
-        for p in (panel_cuenta, panel_conexion, panel_apariencia):
+        for p in paneles:
             izquierda.addWidget(p)
         izquierda.addStretch()
         derecha = QVBoxLayout()
@@ -125,7 +136,82 @@ class VistaConfiguracion(QWidget):
         self.boton_tema.clicked.connect(self._tema)
         self.boton_salir.clicked.connect(self._salir)
         self.boton_probar.clicked.connect(self.probar_conexion)
-        self.probar_conexion()
+        if not self.modo_local:
+            self.probar_conexion()
+
+    # --- respaldos (modo local) ------------------------------------------------
+
+    def _panel_respaldos(self) -> QFrame:
+        from asi_cliente.local import carpeta_datos
+
+        panel, capa = _panel("Respaldos")
+        capa.addWidget(
+            QLabel(
+                f"Toda la información está en esta computadora, en {carpeta_datos()}. "
+                "Haz un respaldo al menos cada semana en una USB o en Google Drive: si la "
+                "computadora falla, es la única copia.",
+                objectName="ayuda",
+                wordWrap=True,
+            )
+        )
+        self.boton_respaldo = QPushButton("Hacer respaldo…", objectName="primario")
+        self.boton_restaurar = QPushButton("Restaurar un respaldo…")
+        fila = QHBoxLayout()
+        fila.addWidget(self.boton_respaldo)
+        fila.addWidget(self.boton_restaurar)
+        fila.addStretch()
+        capa.addLayout(fila)
+        self.boton_respaldo.clicked.connect(self.hacer_respaldo)
+        self.boton_restaurar.clicked.connect(self.restaurar_respaldo)
+        return panel
+
+    def hacer_respaldo(self) -> None:
+        from asi_cliente.local import ErrorLocal, carpeta_datos, hacer_respaldo
+
+        destino = QFileDialog.getExistingDirectory(
+            self, "¿Dónde guardo el respaldo? (por ejemplo, tu USB o Google Drive)"
+        )
+        if not destino:
+            return
+        self.boton_respaldo.setEnabled(False)
+        self.setCursor(Qt.WaitCursor)
+        try:
+            archivo = hacer_respaldo(carpeta_datos(), Path(destino))
+        except (ErrorLocal, OSError) as error:
+            QMessageBox.warning(self, "Respaldo", f"No se pudo hacer el respaldo.\n\n{error}")
+        else:
+            QMessageBox.information(self, "Respaldo", f"Respaldo guardado y verificado:\n{archivo}")
+        finally:
+            self.unsetCursor()
+            self.boton_respaldo.setEnabled(True)
+
+    def restaurar_respaldo(self) -> None:
+        from asi_cliente.local import ErrorLocal, carpeta_datos, programar_restauracion
+
+        archivo, _ = QFileDialog.getOpenFileName(
+            self, "Elige el respaldo a restaurar", "", "Respaldo de ASI-ARCHIVO (*.zip)"
+        )
+        if not archivo:
+            return
+        respuesta = QMessageBox.question(
+            self,
+            "Restaurar respaldo",
+            "La información actual se reemplazará por la del respaldo la próxima vez que "
+            "abras ASI-ARCHIVO. La información actual no se borra: se guarda aparte en "
+            "una carpeta «…antes-de-restaurar».\n\n¿Continuar?",
+        )
+        if respuesta != QMessageBox.Yes:
+            return
+        try:
+            programar_restauracion(carpeta_datos(), Path(archivo))
+        except (ErrorLocal, OSError) as error:
+            QMessageBox.warning(self, "Restaurar respaldo", str(error))
+            return
+        QMessageBox.information(
+            self,
+            "Restaurar respaldo",
+            "Listo. Cierra ASI-ARCHIVO y vuelve a abrirlo para terminar la restauración.",
+        )
 
     def direccion_servidor(self) -> str:
         http = getattr(self.api, "_http", None)

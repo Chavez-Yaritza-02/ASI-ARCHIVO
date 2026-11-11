@@ -32,7 +32,7 @@ Name: "escritorio"; Description: "Crear un acceso directo en el escritorio"; Gro
 Name: "{group}\ASI-ARCHIVO"; Filename: "{app}\ASI-ARCHIVO.exe"
 Name: "{userdesktop}\ASI-ARCHIVO"; Filename: "{app}\ASI-ARCHIVO.exe"; Tasks: escritorio
 Name: "{group}\Manual de uso"; Filename: "{app}\Manual de uso.html"
-Name: "{group}\Configurar conexión"; Filename: "{app}\ASI-ARCHIVO.exe"; Parameters: "--configurar"
+Name: "{group}\Conectar a un servidor central (avanzado)"; Filename: "{app}\ASI-ARCHIVO.exe"; Parameters: "--servidor --configurar"
 
 [Run]
 Filename: "{app}\ASI-ARCHIVO.exe"; Description: "Abrir ASI-ARCHIVO"; Flags: nowait postinstall skipifsilent

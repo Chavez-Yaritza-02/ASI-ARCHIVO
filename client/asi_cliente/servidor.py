@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
 class Servidor:
-    tipo: str  # institucional | demostracion | revision | desarrollo | desconocido
+    tipo: str  # institucional | demostracion | revision | desarrollo | desconocido | local
     titulo: str  # texto corto en mayúsculas, p. ej. «SERVIDOR DE REVISIÓN»
     detalle: str  # qué datos tiene
     direccion: str  # host:puerto
@@ -27,6 +27,7 @@ TIPOS = {
     "revision": ("SERVIDOR DE REVISIÓN", "datos ficticios"),
     "desarrollo": ("SERVIDOR DE DESARROLLO", "no es el sistema oficial"),
     "desconocido": ("SERVIDOR SIN IDENTIFICAR", "confirma con el administrador"),
+    "local": ("MODO LOCAL", "datos guardados en esta computadora"),
 }
 
 
@@ -48,4 +49,8 @@ def describir_servidor(url: str, identidad: dict | None) -> Servidor:
         else:
             tipo = "desconocido"
     titulo, detalle = TIPOS[tipo]
+    if tipo == "local":
+        from asi_cliente.local import carpeta_datos
+
+        return Servidor(tipo, titulo, detalle, str(carpeta_datos()))
     return Servidor(tipo, titulo, detalle, direccion_de(url))

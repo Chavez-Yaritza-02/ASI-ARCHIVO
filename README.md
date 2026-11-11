@@ -3,6 +3,12 @@
 Sistema de Asistencia y Archivo Digital — Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
+## Modo local (rama `modo-local`)
+
+La aplicación puede funcionar **sin servidor**: se instala con un solo archivo y guarda
+todo en la misma computadora (`C:\ASI-ARCHIVO-DATOS`), con respaldos desde
+**Configuración › Respaldos**. Detalles en [docs/MODO_LOCAL.md](docs/MODO_LOCAL.md).
+
 ## Entrega 1.0 (rama `entrega-v1`)
 
 | Para | Documento |

@@ -2,7 +2,7 @@ name: Instalador Windows
 
 on:
   push:
-    branches: [entrega-v1]
+    branches: [entrega-v1, modo-local]
   pull_request:
   workflow_dispatch:
 
@@ -37,7 +37,23 @@ jobs:
         run: uv sync --python 3.12 --package asi-cliente --no-dev --group instalador --locked
       - name: Manual de uso en HTML
         run: uv run --no-sync python empaquetado/manual_html.py "dist/Manual de uso.html"
-      - name: Construir ejecutable con Python y Qt incluidos
+      - name: Lector de PDF (Tesseract) con español e inglés para el modo local
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install tesseract --no-progress -y
+          $origen = Join-Path $env:ProgramFiles 'Tesseract-OCR'
+          $destino = Join-Path $env:RUNNER_TEMP 'tesseract'
+          Copy-Item $origen $destino -Recurse
+          foreach ($idioma in 'spa', 'eng') {
+            $archivo = Join-Path $destino "tessdata/$idioma.traineddata"
+            if (-not (Test-Path $archivo)) {
+              Invoke-WebRequest "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$idioma.traineddata" -OutFile $archivo
+            }
+          }
+          & (Join-Path $destino 'tesseract.exe') --list-langs
+          "ASI_TESSERACT_DIR=$destino" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Construir ejecutable con Python, Qt, API local y lector de PDF incluidos
         run: uv run --no-sync pyinstaller --clean --noconfirm empaquetado/windows/asi.spec
       - name: Instalar compilador de instaladores
         run: choco install innosetup --no-progress -y
@@ -59,6 +75,17 @@ jobs:
           $datos = Get-Content $resultado -Raw | ConvertFrom-Json
           if ($datos.estado -ne 'ok') { throw 'Autoprueba incompleta' }
           Copy-Item $resultado dist/instalador/autoprueba-windows.json
+          # Modo local con el .exe instalado: base SQLite nueva, API interna, procesador
+          # de documentos aislado, lector de PDF y respaldo, en una carpeta temporal.
+          $env:ASI_DATOS = Join-Path $env:RUNNER_TEMP 'asi-datos-prueba'
+          $local = Join-Path $env:RUNNER_TEMP 'asi-autoprueba-local.json'
+          $p = Start-Process $ejecutable -ArgumentList @('--autoprueba-local','--resultado',$local) -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'El modo local no respondió' }
+          if (-not (Test-Path $local)) { throw 'El modo local no dejó resultado' }
+          $datosLocal = Get-Content $local -Raw | ConvertFrom-Json
+          if ($datosLocal.estado -ne 'ok') { throw "Falló el modo local: $($datosLocal.detalle)" }
+          Copy-Item $local dist/instalador/autoprueba-local-windows.json
+          Remove-Item Env:ASI_DATOS
           & herramientas/ci/comprobar-tls-windows.ps1 -Ejecutable $ejecutable
           $p = Start-Process (Join-Path $destino 'unins000.exe') -ArgumentList @('/VERYSILENT','/NORESTART') -Wait -PassThru
           if ($p.ExitCode -ne 0 -or (Test-Path $ejecutable)) { throw 'Falló la desinstalación' }

@@ -25,12 +25,15 @@ class Configuracion(BaseSettings):
     instancia_aceptacion: bool = False
     # Cómo se presenta el servidor en la franja de la aplicación de escritorio.
     # Sin valor, la aplicación lo deduce de `entorno` e `instancia_aceptacion`.
-    tipo_servidor: Literal["institucional", "demostracion", "revision"] | None = None
+    tipo_servidor: Literal["institucional", "demostracion", "revision", "local"] | None = None
     hosts_permitidos: list[str] = []
     archivo_raiz: Path = Path.home() / ".local" / "share" / "asi-archivo" / "documentos"
     archivo_max_mb: int = Field(default=20, ge=1, le=50)
     archivo_antivirus_cmd: Path | None = None
     archivo_requerir_antivirus: bool = True
+    # Modo local (una sola computadora con Windows): analiza cada documento con el
+    # antivirus de Windows (Microsoft Defender) si está disponible.
+    archivo_usar_defender: bool = False
     database_url: str
     # Clave para firmar los tokens de sesión. Debe ser larga y aleatoria.
     secret_key: str = Field(min_length=32)

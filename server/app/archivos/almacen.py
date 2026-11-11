@@ -152,11 +152,22 @@ def _proceso(contenido, pagina=None):
         for k, v in os.environ.items()
         if k in ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG")
     }
-    comando = [sys.executable, "-I", str(Path(__file__).with_name("procesador.py"))]
+    if getattr(sys, "frozen", False):
+        # Aplicación empaquetada (modo local): el mismo .exe hace de procesador aislado.
+        comando = [sys.executable, "--procesar-archivo"]
+    else:
+        comando = [sys.executable, "-I", str(Path(__file__).with_name("procesador.py"))]
     if pagina is not None:
         comando.append(str(pagina))
     try:
-        proceso = subprocess.run(comando, input=contenido, capture_output=True, timeout=15, env=env)
+        proceso = subprocess.run(
+            comando,
+            input=contenido,
+            capture_output=True,
+            timeout=30 if getattr(sys, "frozen", False) else 15,  # el .exe tarda más en abrir
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
     except subprocess.TimeoutExpired as error:
         raise ErrorNegocio("El archivo excede el tiempo permitido de procesamiento", 422) from error
     if proceso.returncode or len(proceso.stdout) > 8 * 1024 * 1024:
@@ -186,9 +197,46 @@ def validar(contenido, nombre, mime):
     }
 
 
+def _defender() -> Path | None:
+    """Ruta de la herramienta de línea de comandos de Microsoft Defender, si existe."""
+    if os.name != "nt":
+        return None
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMW6432")):
+        if base:
+            ruta = Path(base) / "Windows Defender" / "MpCmdRun.exe"
+            if ruta.is_file():
+                return ruta
+    return None
+
+
+def _antivirus_defender(ruta) -> bool:
+    """Analiza con Microsoft Defender. Devuelve False si Defender no está disponible."""
+    comando = _defender()
+    if comando is None:
+        return False
+    try:
+        proceso = subprocess.run(
+            [str(comando), "-Scan", "-ScanType", "3", "-File", str(ruta), "-DisableRemediation"],
+            capture_output=True,
+            timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if proceso.returncode == 2:
+        raise ErrorNegocio("El antivirus de Windows rechazó el archivo", 422)
+    return proceso.returncode == 0
+
+
 def _antivirus(ruta):
     cfg = obtener_configuracion()
+    if cfg.archivo_usar_defender and _antivirus_defender(ruta):
+        return
     if not cfg.archivo_antivirus_cmd:
+        if cfg.entorno == "local":
+            # Una sola computadora: la protección en tiempo real de Windows revisa el
+            # archivo al escribirlo aunque el análisis explícito no esté disponible.
+            return
         if cfg.archivo_requerir_antivirus or cfg.entorno not in ("pruebas", "desarrollo"):
             raise ErrorNegocio("Configura el antivirus local antes de cargar documentos", 503)
         return

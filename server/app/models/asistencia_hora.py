@@ -18,6 +18,21 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, ConFechas
 
 
+def _restricciones_de_tramo(segundos: str, motor: str) -> tuple[CheckConstraint, ...]:
+    """Tramo de una hora como máximo y minutos acreditados que caben en el tramo."""
+    sufijo = "" if motor == "postgresql" else "_local"
+    return (
+        CheckConstraint(
+            f"programado_fin > programado_inicio AND {segundos} <= 3600", name=f"tramo{sufijo}"
+        ).ddl_if(dialect=motor),
+        CheckConstraint(
+            "minutos_cumplidos >= 0 AND minutos_justificados >= 0 AND "
+            f"(minutos_cumplidos + minutos_justificados) * 60 <= {segundos}",
+            name=f"minutos{sufijo}",
+        ).ddl_if(dialect=motor),
+    )
+
+
 class AsistenciaHora(ConFechas, Base):
     __tablename__ = "asistencia_hora"
     __table_args__ = (
@@ -31,16 +46,15 @@ class AsistenciaHora(ConFechas, Base):
             "estado IN ('asistio','retardo','falto','justificado','parcial')", name="estado"
         ),
         CheckConstraint("turno IN ('matutino','vespertino')", name="turno"),
-        CheckConstraint(
-            "programado_fin > programado_inicio AND "
-            "EXTRACT(EPOCH FROM (programado_fin-programado_inicio)) <= 3600",
-            name="tramo",
+        # La duración se calcula distinto en cada motor; cada restricción se crea solo
+        # en el suyo (PostgreSQL: servidor central; SQLite: modo local).
+        *_restricciones_de_tramo(
+            "EXTRACT(EPOCH FROM (programado_fin-programado_inicio))", "postgresql"
         ),
-        CheckConstraint(
-            "minutos_cumplidos >= 0 AND minutos_justificados >= 0 AND "
-            "(minutos_cumplidos + minutos_justificados) * 60 <= "
-            "EXTRACT(EPOCH FROM (programado_fin-programado_inicio))",
-            name="minutos",
+        *_restricciones_de_tramo(
+            "(strftime('%s', '2000-01-01 ' || programado_fin) - "
+            "strftime('%s', '2000-01-01 ' || programado_inicio))",
+            "sqlite",
         ),
         CheckConstraint(
             "hora_salida IS NULL OR hora_entrada IS NULL OR hora_salida > hora_entrada",

@@ -1,10 +1,12 @@
 [project]
 name = "asi-cliente"
 version = "0.1.0"
-description = "Aplicación de escritorio de ASI-ARCHIVO (PySide6)"
+description = "Aplicación de escritorio de ASI-ARCHIVO (PySide6), con modo local integrado"
 requires-python = ">=3.12"
 dependencies = [
     "asi-shared",
+    # Modo local: la aplicación lleva dentro la API y la base SQLite.
+    "asi-server",
     "pyside6>=6.8",
     "httpx>=0.28",
     "keyring>=25.5",

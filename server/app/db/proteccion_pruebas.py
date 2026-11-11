@@ -2,6 +2,8 @@
 
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 from sqlalchemy import Engine, event
 from sqlalchemy.engine import make_url
@@ -27,7 +29,18 @@ def validar_url_pruebas(url) -> None:
         raise RuntimeError("Pruebas bloqueadas: destino PostgreSQL no autorizado")
 
 
+def validar_sqlite_pruebas(ruta) -> None:
+    """Pruebas del modo local: solo bases SQLite dentro de la carpeta temporal."""
+    if not ruta or str(ruta) == ":memory:":
+        return
+    if not Path(ruta).resolve().is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        raise RuntimeError("Pruebas bloqueadas: la base SQLite debe estar en la carpeta temporal")
+
+
 def validar_conexion_pruebas(conexion) -> None:
+    if conexion.dialect.name == "sqlite":
+        validar_sqlite_pruebas(conexion.engine.url.database)
+        return
     validar_url_pruebas(conexion.engine.url)
     fila = conexion.exec_driver_sql(
         "SELECT current_database(), current_user, r.rolsuper, r.rolcreatedb, "
@@ -41,6 +54,9 @@ def validar_conexion_pruebas(conexion) -> None:
 
 @event.listens_for(Engine, "do_connect")
 def _antes_de_conectar(dialect, registro, argumentos, opciones):
+    if en_pruebas() and dialect.name == "sqlite":
+        validar_sqlite_pruebas(argumentos[0] if argumentos else opciones.get("database"))
+        return
     if en_pruebas():
         # Los parámetros efectivos incluyen también cualquier connect_args.
         permitidos = {"dbname", "user", "password", "host", "port", "connect_timeout", "context"}
