@@ -22,12 +22,14 @@ from PySide6.QtWidgets import (
 from asi_cliente.api.cliente import ClienteApi, UsuarioSesion
 from asi_cliente.views.catalogos import DOCENTES, VistaCatalogo, VistaCatalogos
 from asi_cliente.views.horarios import VistaHorarios
+from asi_cliente.views.importacion import VistaImportacion
 from asi_cliente.views.periodos import VistaPeriodos
 
 # (título del menú, permiso necesario para verlo, etapa en que se implementa)
 SECCIONES = [
     ("Bitácora del día", "asistencia.ver", 4),
     ("Horarios", "horarios.ver", 2),
+    ("Importar horarios", "horarios.editar", 3),
     ("Docentes", "docentes.ver", 2),
     ("Periodos", "horarios.ver", 2),
     ("Catálogos", "horarios.ver", 2),
@@ -38,6 +40,7 @@ SECCIONES = [
 
 PANTALLAS = {
     "Horarios": VistaHorarios,
+    "Importar horarios": VistaImportacion,
     "Docentes": lambda api, u: VistaCatalogo(api, u, DOCENTES, "Docentes"),
     "Periodos": VistaPeriodos,
     "Catálogos": VistaCatalogos,

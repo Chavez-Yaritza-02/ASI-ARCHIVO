@@ -210,9 +210,68 @@ Requisitos: Tesseract con idiomas `eng` y `spa` (`brew install tesseract tessera
 
 ```bash
 # Copiar y descomprimir el ZIP en una carpeta FUERA del repositorio, por ejemplo /tmp/horarios
-uv run --group ocr python herramientas/ocr_prueba/extraer.py /tmp/horarios /tmp/resultado.json
+uv run python herramientas/ocr_prueba/extraer.py /tmp/horarios /tmp/resultado.json
 uv run python herramientas/ocr_prueba/evaluar.py /tmp/resultado.json /tmp/verdad --anonimo
 ```
 
 El formato de la carpeta de transcripción está descrito al inicio de
 [evaluar.py](../herramientas/ocr_prueba/evaluar.py).
+
+## Etapa 3: prueba controlada del importador
+
+> Fecha: 2026-11-04. Mismos 26 PDF reales, procesados con el importador completo (API +
+> OCR + comparación con catálogos). Por autorización de la Jefatura, los datos reales se
+> cargaron **solo en una base de datos aislada** (`asi_archivo_ocr`), con su propio
+> usuario y contraseña guardados fuera del repositorio. El usuario de la base de
+> desarrollo no tiene acceso a ella. Las cifras de esta sección son anónimas.
+
+### Ronda A: catálogos vacíos (primera importación sin datos previos)
+
+| Resultado | Valor |
+|---|---|
+| PDF procesados | 26 de 26 (36 páginas), en 12 s |
+| Copias detectadas automáticamente | 6 páginas (Doc 01, 03 ×2, 17, 21, 24) |
+| Páginas por revisar | 30 (917 celdas) |
+| Asignaciones automáticas | 0: sin catálogo no se asigna nada |
+| Asignaciones incorrectas | 0 |
+
+Se detectó que la letra de grupo "O" llegaba como el dígito "0" en 6 celdas. Se
+corrigió: los grupos son letras, así que los dígitos parecidos (0, 8, 1, 5) se
+convierten a O, B, I, S.
+
+### Ronda B: catálogos cargados (simula catálogos ya capturados)
+
+Se cargaron las aulas, asignaturas y docentes de la transcripción verificada.
+
+| Campo | Coincide (automático) | Sugerido (requiere aceptar) | Sin coincidencia (elegir) |
+|---|---|---|---|
+| Docente | 30 / 30 | 0 | 0 |
+| Asignatura | 842 (91.8%) | 40 (4.4%) | 35 (3.8%) |
+| Aula | 798 (87.0%) | 113 (12.3%) | 5 (0.5%) |
+| Grupo | — | — | 776 letras pendientes de validar · 141 actividades sin grupo |
+
+**Asignaciones automáticas incorrectas: 0. Sugerencias incorrectas: 0.**
+
+### Ronda C: revisión mínima y aprobación
+
+Se aceptaron todas las sugerencias y se aprobaron las páginas que quedaron completas.
+
+| Resultado | Valor |
+|---|---|
+| Páginas aprobadas directamente | 17 de 30 |
+| Páginas con datos por elegir | 13 (35 asignaturas y 5 aulas en total) |
+| Celdas de los borradores comparadas con la transcripción | 510 |
+| Asignatura, aula y letra de grupo correctas | **510 / 510 (100%)** |
+| Celdas faltantes o sobrantes | 0 |
+
+Los 40 datos por elegir son casos que el OCR leyó con errores no corregibles con
+seguridad (por ejemplo, el numeral romano final perdido, "Avan I" leído como "Avan"),
+o aulas leídas con caracteres de más ("1.4.0" por "L4.0"). El sistema no los adivina:
+los muestra en rojo con la imagen del documento para que el usuario elija.
+
+### Qué falta para usar datos reales en la base principal
+
+- Autorización para cargar datos reales fuera de la base aislada.
+- Capturar el catálogo real de grupos (carrera, semestre y letra por periodo) para
+  validar las 776 letras pendientes.
+- Revisar y confirmar con la Jefatura el catálogo de aulas y asignaturas.

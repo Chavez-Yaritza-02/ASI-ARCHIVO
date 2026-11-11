@@ -109,3 +109,46 @@ def test_asignaturas_grupos_y_aulas(cliente, como_admin):
     ).json()
     assert aula["clave"] == "SALA EM"
     assert cliente.get("/aulas?buscar=sala", headers=como_admin).json()[0]["id"] == aula["id"]
+
+
+def test_grupo_completo_o_pendiente_de_validacion(cliente, como_admin):
+    periodo = cliente.post(
+        "/periodos",
+        json={
+            "nombre": "Agosto - Diciembre 2026",
+            "fecha_inicio": "2026-08-01",
+            "fecha_fin": "2026-12-31",
+        },
+        headers=como_admin,
+    ).json()["id"]
+    solo_letra = cliente.post("/grupos", json={"letra": "a"}, headers=como_admin).json()
+    assert (solo_letra["clave"], solo_letra["pendiente_validacion"]) == ("A", True)
+
+    completo = {"letra": "A", "periodo_id": periodo, "carrera": "iem", "semestre": 3}
+    g = cliente.post("/grupos", json=completo, headers=como_admin).json()
+    assert (g["clave"], g["carrera"], g["pendiente_validacion"]) == ("IEM 3A", "IEM", False)
+    # La misma letra en otro semestre es otro grupo; el mismo grupo completo, duplicado.
+    otro = {**completo, "semestre": 7}
+    assert cliente.post("/grupos", json=otro, headers=como_admin).status_code == 201
+    assert cliente.post("/grupos", json=completo, headers=como_admin).status_code == 409
+
+    assert (
+        cliente.post("/grupos", json={**completo, "semestre": 13}, headers=como_admin).status_code
+        == 422
+    )
+    assert (
+        cliente.post(
+            "/grupos", json={**completo, "periodo_id": 999}, headers=como_admin
+        ).status_code
+        == 404
+    )
+    del_periodo = cliente.get(f"/grupos?periodo_id={periodo}", headers=como_admin).json()
+    assert [x["clave"] for x in del_periodo] == ["IEM 3A", "IEM 7A"]
+
+    # Completar un grupo pendiente lo valida.
+    r = cliente.patch(
+        f"/grupos/{solo_letra['id']}",
+        json={"periodo_id": periodo, "carrera": "IGE", "semestre": 1},
+        headers=como_admin,
+    )
+    assert (r.json()["clave"], r.json()["pendiente_validacion"]) == ("IGE 1A", False)

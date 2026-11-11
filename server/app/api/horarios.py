@@ -74,6 +74,7 @@ def reemplazar_bloques(id_: int, bloques: list[BloqueEntrada], sesion: SesionDB,
             asignatura_id=b.asignatura_id,
             grupo_id=b.grupo_id,
             aula_id=b.aula_id,
+            grupo_letra=(b.grupo_letra or "").strip().upper() or None,
         )
         for b in bloques
     ]

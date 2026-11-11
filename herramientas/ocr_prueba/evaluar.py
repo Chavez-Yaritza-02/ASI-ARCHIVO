@@ -25,8 +25,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from analisis import (  # noqa: E402
+from app.importers.analisis import (
     CAMPOS,
     Catalogo,
     Celda,

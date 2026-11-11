@@ -17,6 +17,7 @@ class Celda:
     asignatura_id: int
     grupo_id: int | None = None
     aula_id: int | None = None
+    grupo_letra: str | None = None  # letra pendiente de validación (sin grupo completo)
 
 
 class CuadriculaNoCompatible(ValueError):
@@ -40,6 +41,7 @@ def bloques_a_celdas(bloques: list[dict]) -> dict[tuple[str, int], Celda]:
             b["asignatura"]["id"],
             b["grupo"]["id"] if b.get("grupo") else None,
             b["aula"]["id"] if b.get("aula") else None,
+            None if b.get("grupo") else b.get("grupo_letra"),
         )
         for h in range(h_ini, h_fin):
             celdas[(b["dia"], h)] = celda
@@ -69,6 +71,7 @@ def celdas_a_bloques(celdas: dict[tuple[str, int], Celda]) -> list[dict]:
             "asignatura_id": b["_celda"].asignatura_id,
             "grupo_id": b["_celda"].grupo_id,
             "aula_id": b["_celda"].aula_id,
+            "grupo_letra": b["_celda"].grupo_letra,
         }
         for b in bloques
     ]

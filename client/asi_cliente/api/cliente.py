@@ -54,7 +54,9 @@ class ClienteApi:
         usan el TestClient de FastAPI para hablar con la API real sin abrir un puerto)."""
         if http is None:
             url = url or os.environ.get("ASI_SERVIDOR_URL", "http://127.0.0.1:8000")
-            http = httpx.Client(base_url=validar_url(url), timeout=15, transport=transporte)
+            # Escritura amplia: subir un ZIP de horarios por internet puede tardar.
+            tiempo = httpx.Timeout(20, write=300)
+            http = httpx.Client(base_url=validar_url(url), timeout=tiempo, transport=transporte)
         self._http = http
         self._token: str | None = None
         self.usuario: UsuarioSesion | None = None
@@ -111,6 +113,18 @@ class ClienteApi:
 
     def patch(self, ruta: str, datos: dict):
         return self._peticion("PATCH", ruta, json=datos).json()
+
+    def subir(self, ruta: str, nombre: str, contenido: bytes, datos: dict):
+        """Envía un archivo (multipart), p. ej. un ZIP de horarios."""
+        return self._peticion(
+            "POST", ruta, files={"archivo": (nombre, contenido)}, data=datos
+        ).json()
+
+    def obtener_bytes(self, ruta: str) -> bytes | None:
+        try:
+            return self._peticion("GET", ruta).content
+        except ErrorApi:
+            return None
 
     # --- internos -------------------------------------------------------
 

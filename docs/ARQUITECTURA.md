@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 2.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 3.
 
 ## 1. Objetivo
 
@@ -83,6 +83,7 @@ ASI-ARCHIVO/
 │   │   ├── core/           # configuración y seguridad
 │   │   ├── db/             # conexión a PostgreSQL
 │   │   ├── models/         # tablas (SQLAlchemy)
+│   │   ├── importers/      # OCR de horarios y comparación con catálogos
 │   │   ├── schemas/        # validación de entrada y salida (Pydantic)
 │   │   └── services/       # reglas de negocio y auditoría
 │   └── tests/
@@ -95,14 +96,14 @@ ASI-ARCHIVO/
 │   │   └── theme/          # temas claro y oscuro
 │   └── tests/
 ├── herramientas/
-│   ├── ocr_prueba/         # prototipo de extracción y evaluación de OCR (Etapa 1b)
+│   ├── ocr_prueba/         # evaluación de OCR contra transcripciones (Etapa 1b)
 │   └── tests/
 ├── docs/                   # esta documentación
 └── .github/workflows/      # pruebas automáticas
 ```
 
-Se agregarán carpetas solo cuando se necesiten: `server/app/importers/` (Etapa 3),
-`server/app/reports/` (Etapa 7) y `deploy/` (Etapa 8).
+Se agregarán carpetas solo cuando se necesiten: `server/app/reports/` (Etapa 7) y
+`deploy/` (Etapa 8). El código de OCR vive en `server/app/importers/` desde la Etapa 3.
 
 ## 5. Modelo de datos
 
@@ -125,10 +126,11 @@ permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin
 |---|---|
 | `docente` | Nombre (como en los horarios institucionales), `nombre_normalizado` único (sin acentos, evita duplicados), nómina única, correo, activo |
 | `asignatura` | Materias (`tipo = materia`, requieren grupo) y otras actividades (`tipo = actividad`: gestión, tutoría, residencia…). Nombre normalizado único sin signos: "CÁLC. DIF." = "calc dif" |
-| `grupo`, `aula` | Clave única en mayúsculas ("A", "M05", "SALA EM") y descripción |
+| `grupo` | Se identifica por **periodo + carrera + semestre + letra** (llave única). Si falta periodo, carrera o semestre queda *pendiente de validación* (Etapa 3) |
+| `aula` | Clave única en mayúsculas ("M05", "SALA EM") y descripción |
 | `periodo` | Nombre, fechas, estado `borrador / activo / cerrado`. Índice único parcial: **solo un periodo activo**. Las fechas de dos periodos no pueden traslaparse |
 | `horario` | Una **versión** del horario de un docente en un periodo: número de versión, estado, origen (`manual / pdf / excel / csv`), fecha y versión del documento institucional, versión base, quién lo creó y quién lo confirmó. Índice único parcial: **una sola versión vigente por docente y periodo** |
-| `bloque_horario` | Día (0 = lunes … 5 = sábado), hora de inicio y fin, asignatura, grupo y aula. Los horarios **por grupo** (Etapa 5) se obtendrán de esta misma tabla |
+| `bloque_horario` | Día (0 = lunes … 5 = sábado), hora de inicio y fin, asignatura, grupo, aula y `grupo_letra` (letra leída del documento cuando aún no se sabe a qué grupo corresponde). Los horarios **por grupo** (Etapa 5) se obtendrán de esta misma tabla |
 
 Ningún catálogo se borra: se desactiva. Un registro inactivo sigue apareciendo en los
 horarios antiguos, pero no puede usarse en horarios nuevos.
@@ -169,21 +171,78 @@ Las reglas de negocio responden con `{"detail": mensaje, "problemas": [...]}` y 
 código 4xx (404 no existe, 409 conflicto, 422 datos inválidos). La documentación
 interactiva completa está en `/docs` con la API en marcha.
 
-### Planeado
+### Implementado en la Etapa 3: importación de horarios desde PDF
 
-**Importación (Etapa 3)**
-- `lote_importacion`: un ZIP, quién lo subió y su estado.
-- `archivo_importado`: hash SHA-256 (para detectar duplicados), páginas y método
-  (texto u OCR).
-- Cada página trae un código QR con el encabezado (docente, nómina, periodo, vigencia,
-  versión, fecha) y el total de horas. Se usa para llenar el encabezado sin OCR y para
-  verificar que se leyeron todas las celdas.
-- Un PDF puede traer copias o varias versiones del mismo horario. El importador las
-  agrupa por versión y fecha, descarta copias y pide al usuario la versión vigente.
-- `fila_extraida`: zona temporal para la vista previa editable; nada pasa a `horario`
-  hasta que el usuario lo confirma.
-- La importación usa una interfaz común de "lector" (PDF, Excel, CSV) para que agregar
-  Excel o CSV después no cambie el resto del proceso.
+**Grupos.** Una letra sola no identifica a un grupo (la "A" de 1er semestre no es la
+"A" de 7º). El catálogo de grupos guarda periodo, carrera, semestre y letra. Lo que el
+PDF trae es solo la letra: se guarda en `bloque_horario.grupo_letra` como **pendiente de
+validación**, sin asociarla a ningún grupo. Confirmar un horario con grupos pendientes
+genera una advertencia que el administrador debe aceptar.
+
+**Zona de revisión** (nada de esto es un horario oficial):
+
+| Tabla | Propósito |
+|---|---|
+| `importacion` | Un archivo subido (ZIP o PDF): periodo, quién lo subió, SHA-256, estado `procesando / en_revision / terminada / error / cancelada` y avance |
+| `importacion_documento` | Cada PDF: nombre, SHA-256, estado `procesado / duplicado / error` |
+| `importacion_pagina` | Una propuesta de horario: encabezado (del QR o del OCR), docente leído y asignado, versión y fecha del documento, horas declaradas, estado `por_revisar / aprobada / descartada / duplicada / error`, horario creado al aprobar |
+| `importacion_celda` | Una hora de la cuadrícula: texto OCR (evidencia, no se modifica), recorte de imagen, valores asignados y su estado |
+
+**Comparación con catálogos** (`app/importers/coincidencias.py`). Nunca asigna una
+coincidencia dudosa:
+
+| Estado | Cuándo | Qué pasa |
+|---|---|---|
+| `coincide` | El texto normalizado es idéntico a un único registro | Se asigna |
+| `sugerido` | Se parece a un único registro ("MOS" ~ "M05", 1–2 letras distintas con el mismo numeral final) | Se propone; **el usuario debe aceptarlo** |
+| `sin_coincidencia` | No se parece a nada, o se parece a varios (ambiguo) | El usuario elige o crea el registro |
+| `pendiente` | Grupo: solo se conoce la letra | Se conserva la letra; el grupo se valida después |
+
+**Flujo y reglas** (`app/services/importacion.py`):
+1. *Subir.* Solo ZIP o PDF, máximo 60 MB (300 MB descomprimido, 300 PDFs). Del ZIP se
+   toma solo el nombre de cada archivo, nunca su ruta. El archivo original no se
+   modifica ni se guarda: solo su SHA-256 y el recorte de cada celda.
+2. *Duplicados.* Un PDF con la misma huella que otro ya importado (en una importación
+   no cancelada) no se procesa. Páginas con el mismo QR dentro de la importación se
+   marcan como copias (se pueden restaurar). Al aprobar, si ya existe un horario del
+   mismo docente, periodo, versión y fecha del documento, se pide confirmación.
+3. *OCR en segundo plano*, en varios procesos. Si un PDF está dañado, solo ese
+   documento queda con error.
+4. *Revisión.* Se pueden corregir docente, asignaturas, grupos, aulas, días y horas,
+   agregar o eliminar celdas. Todo valor que el usuario elige o acepta queda
+   `confirmado`. Crear un docente, asignatura o aula nueva es siempre una acción
+   explícita del usuario.
+5. *Aprobar* solo si no queda nada pendiente; si las horas no coinciden con las del
+   documento, se pide confirmación. Aprobar **crea un horario en borrador** (origen
+   `pdf`, con versión y fecha del documento). Volverlo vigente sigue siendo el paso de
+   confirmación de la Etapa 2 (`horarios.confirmar`).
+6. Todo queda en la auditoría: importar, revisar, aceptar sugerencias, aprobar,
+   descartar, restaurar y cancelar.
+
+**Formato común de página.** El servicio recibe cada página como encabezado + celdas
+(`dia-hora` → actividad, grupo, aula, texto). Un lector de Excel o CSV futuro solo
+tendrá que producir ese mismo formato para reutilizar toda la revisión.
+
+**Endpoints** (todos requieren `horarios.editar`):
+
+| Ruta | Uso |
+|---|---|
+| `POST /importaciones` (multipart: `archivo`, `periodo_id`) | Sube el archivo; responde 202 y el OCR sigue en segundo plano |
+| `GET /importaciones`, `GET /importaciones/{id}` | Avance, documentos y páginas con su conteo de pendientes |
+| `POST /importaciones/{id}/cancelar` | Descarta lo que quedaba por revisar |
+| `GET /importaciones/paginas/{id}` | Detalle: celdas, pendientes y avisos |
+| `PUT /importaciones/paginas/{id}` | Guarda la revisión (docente y celdas) |
+| `POST /importaciones/paginas/{id}/aceptar-sugerencias` | Acepta todas las sugerencias de la página |
+| `POST /importaciones/paginas/{id}/aprobar` | Crea el borrador (`aceptar_diferencia_horas`, `permitir_duplicado`) |
+| `POST /importaciones/paginas/{id}/descartar` · `/restaurar` | Descartar o devolver a revisión |
+| `GET /importaciones/celdas/{id}/imagen` | Recorte PNG de la celda en el documento original |
+
+**Dónde corre el OCR.** Solo en el servidor (Tesseract con idiomas `eng` y `spa`). Las
+computadoras Windows y la Mac solo envían el archivo y muestran la revisión. En un
+servidor Windows, si Tesseract no está en el PATH, se indica su ruta con
+`ASI_TESSERACT_CMD`. `ASI_OCR_PROCESOS` limita el número de procesos de OCR.
+
+### Planeado
 
 **Asistencia (Etapa 4)**
 - `asistencia_diaria`: docente, fecha, estado, motivo, observaciones, justificante y
@@ -234,7 +293,7 @@ interactiva completa está en `/docs` con la API en marcha.
 
 1. Inicio de sesión con roles. ✅ (Etapa 1)
 2. Docentes y periodos. ✅ (Etapa 2)
-3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs (Etapa 3).
+3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs ✅ (Etapa 3).
 4. Bitácora diaria con registro de estado, motivo, justificante e historial.
 5. Buscador con "¿dónde debería estar ahora?".
 6. Servidor desplegado con HTTPS y respaldos.
@@ -246,8 +305,8 @@ interactiva completa está en `/docs` con la API en marcha.
 | 1 | Estructura, entorno, base de datos, autenticación, ventana de login, CI | ✅ Completa |
 | 1b | Prueba de OCR con los PDFs reales (solo local) | ✅ Completa ([resultados](EVALUACION_OCR.md)) |
 | 2 | Docentes, periodos, catálogos, captura y edición de horarios con versiones | ✅ Completa |
-| 3 | Importación ZIP → PDF → texto/OCR → vista previa editable | Siguiente (pendiente de autorización) |
-| 4 | Bitácora diaria y registro de asistencia | |
+| 3 | Importación ZIP → PDF → OCR → revisión editable → borrador | ✅ Completa ([resultados](EVALUACION_OCR.md#etapa-3-prueba-controlada-del-importador)) |
+| 4 | Bitácora diaria y registro de asistencia | Siguiente (pendiente de autorización) |
 | 5 | Buscador, horarios por grupo, cruces, ubicación programada | |
 | 6 | Archivo digital de documentos | |
 | 7 | Reportes PDF y Excel | |
@@ -271,3 +330,9 @@ interactiva completa está en `/docs` con la API en marcha.
 | 2026-11-04 | Activar un periodo exige cerrar antes el activo | Evita cambiar de semestre por accidente |
 | 2026-11-04 | Grupo como catálogo simple (clave) | Los PDF solo muestran una letra; la relación grupo–carrera–semestre se definirá con la Jefatura |
 | 2026-11-04 | Cuadrícula de horas exactas en la interfaz | Igual al formato institucional; la API admite horas no exactas y la interfaz lo avisa |
+| 2026-11-04 | Grupo = periodo + carrera + semestre + letra; letra sola = pendiente | Pedido por la Jefatura: no suponer que la letra identifica al grupo |
+| 2026-11-04 | Solo coincidencias exactas se asignan solas; parecidas = sugerencia | No asignar coincidencias dudosas; en la prueba real hubo 0 asignaciones incorrectas |
+| 2026-11-04 | Aprobar una página crea un borrador, no un horario vigente | Dos confirmaciones humanas antes de que un horario importado sea oficial |
+| 2026-11-04 | No se guarda el PDF original, solo su SHA-256 y recortes de celdas | Minimiza datos personales almacenados; el archivo digital llegará en la Etapa 6 |
+| 2026-11-04 | OCR en el servidor, en segundo plano y en varios procesos | Clientes Windows sin Tesseract; 26 PDF en ~12 s sin bloquear la API |
+| 2026-11-04 | Pruebas con PDF ficticios generados por código | Las pruebas no pueden contener datos reales; los reales solo en una base aislada |

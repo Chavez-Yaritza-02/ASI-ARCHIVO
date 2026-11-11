@@ -72,13 +72,21 @@ class DialogoCelda(QDialog):
         self.setWindowTitle(f"{TITULOS_DIAS[DIAS.index(dia)]} {hora:02d}:00")
         self.asignatura = self._combo(catalogos["asignaturas"], "nombre", opcional=False)
         self.grupo = self._combo(catalogos["grupos"], "clave", opcional=True)
+        # Una letra sola no identifica al grupo: se conserva como "pendiente" hasta elegirlo.
+        if celda and celda.grupo_letra:
+            self.grupo.insertItem(
+                1,
+                f"Letra «{celda.grupo_letra}» (pendiente de validar)",
+                f"letra:{celda.grupo_letra}",
+            )
         self.aula = self._combo(catalogos["aulas"], "clave", opcional=True)
         self.horas = QSpinBox(minimum=1, maximum=HORAS[-1] + 1 - hora, value=1)
         self.horas.setSuffix(" h")
         if celda:
+            grupo = celda.grupo_id or (f"letra:{celda.grupo_letra}" if celda.grupo_letra else None)
             for combo, valor in (
                 (self.asignatura, celda.asignatura_id),
-                (self.grupo, celda.grupo_id),
+                (self.grupo, grupo),
                 (self.aula, celda.aula_id),
             ):
                 combo.setCurrentIndex(max(combo.findData(valor), 0))
@@ -110,15 +118,22 @@ class DialogoCelda(QDialog):
             combo.addItem("—", None)
         for r in registros:
             if r["activo"]:
-                combo.addItem(r[campo], r["id"])
+                texto = r[campo] + (" (pendiente)" if r.get("pendiente_validacion") else "")
+                combo.addItem(texto, r["id"])
         return combo
 
     def celda(self) -> Celda | None:
         if self.asignatura.currentData() is None:
             return None
-        return Celda(
-            self.asignatura.currentData(), self.grupo.currentData(), self.aula.currentData()
-        )
+        grupo = self.grupo.currentData()
+        if isinstance(grupo, str) and grupo.startswith("letra:"):
+            return Celda(
+                self.asignatura.currentData(),
+                None,
+                self.aula.currentData(),
+                grupo.removeprefix("letra:"),
+            )
+        return Celda(self.asignatura.currentData(), grupo, self.aula.currentData())
 
 
 class VistaHorarios(QWidget):
@@ -358,7 +373,9 @@ class VistaHorarios(QWidget):
         self.cuadricula.clearContents()
         for (dia, hora), celda in self.celdas.items():
             asignatura = self.nombres["asignaturas"].get(celda.asignatura_id, {})
-            grupo = self.nombres["grupos"].get(celda.grupo_id, {}).get("clave")
+            grupo = self.nombres["grupos"].get(celda.grupo_id, {}).get("clave") or (
+                f"{celda.grupo_letra}?" if celda.grupo_letra else None
+            )
             aula = self.nombres["aulas"].get(celda.aula_id, {}).get("clave")
             # En la celda va lo esencial ("A · M01"); el detalle completo, al pasar el mouse.
             breve = " · ".join(x for x in (grupo, aula) if x)
@@ -414,7 +431,16 @@ class VistaHorarios(QWidget):
         if not self._editable():
             return
         dia, hora = DIAS[columna], HORAS[fila]
-        dialogo = DialogoCelda(self.catalogos, self.celdas.get((dia, hora)), dia, hora, self)
+        periodo = self._periodo() or {}
+        catalogos = {
+            **self.catalogos,
+            "grupos": [
+                g
+                for g in self.catalogos["grupos"]
+                if g.get("periodo_id") in (None, periodo.get("id"))
+            ],
+        }
+        dialogo = DialogoCelda(catalogos, self.celdas.get((dia, hora)), dia, hora, self)
         resultado = dialogo.exec()
         if resultado == DialogoCelda.VACIAR:
             self.celdas.pop((dia, hora), None)

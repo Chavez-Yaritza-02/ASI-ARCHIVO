@@ -21,6 +21,10 @@ class ReferenciaClave(BaseModel):
     clave: str
 
 
+class GrupoRef(ReferenciaClave):
+    pendiente_validacion: bool
+
+
 class AsignaturaRef(Referencia):
     tipo: str
 
@@ -35,6 +39,7 @@ class BloqueEntrada(BaseModel):
     hora_fin: time
     asignatura_id: int
     grupo_id: int | None = None
+    grupo_letra: str | None = Field(default=None, max_length=5)
     aula_id: int | None = None
 
 
@@ -43,7 +48,8 @@ class BloqueSalida(BaseModel):
     hora_inicio: time
     hora_fin: time
     asignatura: AsignaturaRef
-    grupo: ReferenciaClave | None
+    grupo: GrupoRef | None
+    grupo_letra: str | None = None
     aula: ReferenciaClave | None
 
 
@@ -122,7 +128,8 @@ def detalle(horario, advertencias: list[str] | None = None) -> HorarioDetalle:
                 hora_inicio=b.hora_inicio,
                 hora_fin=b.hora_fin,
                 asignatura=AsignaturaRef.model_validate(b.asignatura),
-                grupo=ReferenciaClave.model_validate(b.grupo) if b.grupo else None,
+                grupo=GrupoRef.model_validate(b.grupo) if b.grupo else None,
+                grupo_letra=b.grupo_letra,
                 aula=ReferenciaClave.model_validate(b.aula) if b.aula else None,
             )
             for b in horario.bloques

@@ -200,7 +200,7 @@ def clave_equivalente(clave: str | None) -> str:
     return normalizar(clave).replace(" ", "").replace("O", "0").replace("I", "1")
 
 
-def _numeral_final(texto: str) -> str:
+def numeral_final(texto: str) -> str:
     """Numeral romano al final del nombre ('TALL. INV. II' -> 'II'), tolerando 1/l/!."""
     m = re.search(r"[\s.]([IVXl1!|]+)\.?\s*$", texto)
     return m.group(1).upper().translate(str.maketrans("L1!|", "IIII")) if m else ""
@@ -212,9 +212,9 @@ def actividad_exacta(esperada: str, obtenida: str) -> bool:
 
 def actividad_aproximada(esperada: str, obtenida: str) -> bool:
     """Casi igual y con el mismo numeral final ('Avan I' no es lo mismo que 'Avan II')."""
-    return similitud(esperada, obtenida) >= UMBRAL_ACTIVIDAD and _numeral_final(
+    return similitud(esperada, obtenida) >= UMBRAL_ACTIVIDAD and numeral_final(
         esperada
-    ) == _numeral_final(obtenida)
+    ) == numeral_final(obtenida)
 
 
 @dataclass
@@ -280,7 +280,7 @@ def esqueleto(clave: str | None) -> str:
     return normalizar(clave).replace(" ", "").translate(_CONFUSIONES)
 
 
-def _igual_o_un_caracter_extra(a: str, b: str) -> bool:
+def igual_o_un_caracter_extra(a: str, b: str) -> bool:
     """'M003' ~ 'M03' (el OCR duplicó un carácter). No acepta sustituciones: 'M01' != 'M02'."""
     if a == b:
         return True
@@ -322,8 +322,8 @@ class Catalogo:
 
     def _parecidos(self, a: str, b: str) -> bool:
         if self.tipo == "aula":
-            return _igual_o_un_caracter_extra(esqueleto(a), esqueleto(b))
-        return similitud(a, b) >= UMBRAL_CATALOGO and _numeral_final(a) == _numeral_final(b)
+            return igual_o_un_caracter_extra(esqueleto(a), esqueleto(b))
+        return similitud(a, b) >= UMBRAL_CATALOGO and numeral_final(a) == numeral_final(b)
 
     def _elegir(self, grupo: list[str], frecuencia: dict[str, int]) -> str:
         if self.tipo == "aula":
@@ -340,7 +340,7 @@ class Catalogo:
         yield lambda a, b: normalizar(a) == normalizar(b)
         if self.tipo == "aula":
             yield lambda a, b: esqueleto(a) == esqueleto(b)
-            yield lambda a, b: _igual_o_un_caracter_extra(esqueleto(a), esqueleto(b))
+            yield lambda a, b: igual_o_un_caracter_extra(esqueleto(a), esqueleto(b))
         else:
             yield self._parecidos
 

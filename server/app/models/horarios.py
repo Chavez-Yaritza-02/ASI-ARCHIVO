@@ -115,6 +115,9 @@ class BloqueHorario(Base):
     hora_fin: Mapped[time] = mapped_column(Time)
     asignatura_id: Mapped[int] = mapped_column(ForeignKey("asignatura.id"))
     grupo_id: Mapped[int | None] = mapped_column(ForeignKey("grupo.id"))
+    # Letra leída del documento cuando aún no se sabe a qué grupo corresponde
+    # (pendiente de validación). Se usa solo si grupo_id está vacío.
+    grupo_letra: Mapped[str | None] = mapped_column(String(5))
     aula_id: Mapped[int | None] = mapped_column(ForeignKey("aula.id"))
 
     horario: Mapped[Horario] = relationship(back_populates="bloques")

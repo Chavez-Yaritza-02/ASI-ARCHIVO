@@ -3,7 +3,7 @@
 Todos los datos son ficticios; imitan el formato de los horarios institucionales.
 """
 
-from analisis import (
+from app.importers.analisis import (
     Catalogo,
     Celda,
     actividad_aproximada,
