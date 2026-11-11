@@ -86,7 +86,9 @@ def reemplazar_bloques(id_: int, bloques: list[BloqueEntrada], sesion: SesionDB,
 def confirmar(id_: int, datos: Confirmacion, sesion: SesionDB, usuario: Confirmador):
     """Convierte el borrador en la versión vigente. Si hay advertencias (aula ocupada,
     versión idéntica) responde 409 con la lista, salvo que se acepten explícitamente."""
-    return detalle(servicio.confirmar(sesion, usuario, id_, datos.aceptar_advertencias))
+    return detalle(
+        servicio.confirmar(sesion, usuario, id_, datos.aceptar_advertencias, datos.vigente_desde)
+    )
 
 
 @router.post("/{id_}/descartar", response_model=HorarioDetalle)

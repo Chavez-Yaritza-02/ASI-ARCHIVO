@@ -118,6 +118,24 @@ GitHub Actions ejecuta lo mismo en cada *push* ([.github/workflows/pruebas.yml](
 Las páginas repetidas (mismo QR) se marcan como *Duplicada*, y un PDF ya importado no se
 vuelve a procesar. El archivo original solo se lee: no se modifica ni se guarda.
 
+## Uso: bitácora diaria (Etapa 4)
+
+- **Bitácora del día:** elige la fecha (◀ ▶ u «Hoy»). Aparecen los docentes con
+  actividades ese día según el horario que regía en esa fecha, un renglón por turno
+  (matutino antes de las 14:00, vespertino desde las 14:00).
+  - Doble clic o «Registrar / corregir»: estado, hora real de entrada y salida,
+    observaciones y justificación. Si la entrada rebasa 10 min se sugiere «Retardo».
+  - «Marcar seleccionados: asistió» registra varios pendientes a la vez.
+  - Una corrección pide motivo; corregir días anteriores requiere autorización. El
+    botón «Historial» muestra cada cambio, quién lo hizo y por qué.
+  - «Nueva incidencia» agrega notas del día (comisión, permiso, cambio de aula…).
+  - «Exportar PDF» o «Exportar Excel» genera la bitácora con espacio para firmas.
+- **Calendario:** registra días inhábiles, vacaciones y suspensiones (todo el día o un
+  turno). En esas fechas la bitácora no espera registros ni genera faltas. Un «día hábil
+  (excepción)» permite trabajar en una fecha inhábil.
+- Sin registro, un docente aparece como **Pendiente de verificar**: el sistema nunca
+  marca faltas por su cuenta.
+
 ## Datos reales y base aislada
 
 Los documentos reales se guardan fuera del repositorio, en `~/ASI-ARCHIVO-DATOS/`. Esa

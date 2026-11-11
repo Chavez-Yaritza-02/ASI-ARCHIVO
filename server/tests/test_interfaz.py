@@ -45,6 +45,14 @@ def errores(monkeypatch):
     for modulo in (vista_catalogos, vista_periodos, vista_horarios):
         monkeypatch.setattr(modulo, "mostrar_error", lambda _p, e, *_: vistos.append(e))
         monkeypatch.setattr(modulo, "confirmar", lambda *_a, **_k: True)
+    # Al reemplazar una versión vigente se pregunta desde cuándo rige: fecha del periodo.
+    monkeypatch.setattr(
+        VistaHorarios,
+        "_pedir_vigencia",
+        lambda self: (
+            "2026-09-01" if any(v["estado"] == "vigente" for v in self.versiones.filas) else None
+        ),
+    )
     return vistos
 
 
@@ -234,6 +242,7 @@ def test_horario_flujo_completo_desde_la_interfaz(qtbot, api_admin, datos, error
     vista.boton_confirmar.click()
 
     estados = [(v["version"], v["estado"]) for v in vista.versiones.filas]
+    assert errores == [], [(str(e), e.problemas) for e in errores]
     assert estados == [(2, "vigente"), (1, "historico")]
     assert errores == []
 

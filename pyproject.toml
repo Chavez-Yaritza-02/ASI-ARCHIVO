@@ -23,6 +23,7 @@ dev = [
     "asi-cliente",
     "pytest>=8.3",
     "pytest-qt>=4.4",
+    "pytest-timeout>=2.3",
     "segno>=1.6",  # genera códigos QR para los PDF ficticios de prueba
     "ruff>=0.8",
 ]
@@ -40,6 +41,7 @@ known-first-party = ["app", "asi_cliente", "asi_shared"]
 [tool.pytest.ini_options]
 testpaths = ["server/tests", "client/tests", "herramientas/tests"]
 addopts = "--import-mode=importlib"
+timeout = 120  # una prueba que espera un diálogo sin respuesta falla en vez de colgarse
 pythonpath = ["server/tests"]  # generador de PDFs ficticios
 filterwarnings = [
     "ignore::DeprecationWarning:fastapi.testclient",

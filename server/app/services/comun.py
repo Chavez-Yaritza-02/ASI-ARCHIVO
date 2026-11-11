@@ -4,10 +4,18 @@ import re
 import unicodedata
 from datetime import date, datetime, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.models import Auditoria, Usuario
+
+
+def hoy() -> date:
+    """Fecha actual en la zona horaria de la Jefatura (no la del servidor)."""
+    from app.core.config import obtener_configuracion
+
+    return datetime.now(ZoneInfo(obtener_configuracion().zona_horaria)).date()
 
 
 class ErrorNegocio(Exception):

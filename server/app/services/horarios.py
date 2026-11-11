@@ -13,7 +13,7 @@ Validaciones:
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,7 +28,7 @@ from app.models import (
     Periodo,
     Usuario,
 )
-from app.services.comun import ErrorNegocio, NoEncontrado, auditar, instantanea
+from app.services.comun import ErrorNegocio, NoEncontrado, auditar, hoy, instantanea
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]
 CAMPOS = ["docente_id", "periodo_id", "version", "estado", "origen", "notas"]
@@ -348,20 +348,48 @@ def reemplazar_bloques(
     return horario
 
 
-def confirmar(sesion: Session, usuario: Usuario, id_: int, aceptar_advertencias: bool) -> Horario:
-    """Convierte un borrador en la versión vigente. La anterior pasa a histórico."""
+def confirmar(
+    sesion: Session,
+    usuario: Usuario,
+    id_: int,
+    aceptar_advertencias: bool,
+    vigente_desde: date | None = None,
+) -> Horario:
+    """Convierte un borrador en la versión vigente. La anterior pasa a histórico.
+
+    `vigente_desde`: fecha desde la que rige. Si se omite: el inicio del periodo cuando
+    es la primera versión, u hoy cuando reemplaza a otra. La anterior rige hasta el día
+    previo, así la bitácora de fechas pasadas sigue usando el horario de ese momento.
+    """
     horario = obtener(sesion, id_)
-    _exigir_periodo_abierto(horario.periodo)
+    periodo = horario.periodo
+    _exigir_periodo_abierto(periodo)
     _exigir_borrador(horario)
     if not horario.bloques:
         raise ErrorNegocio("No se puede confirmar un horario sin actividades", 422)
+    anterior = vigente(sesion, horario.docente_id, horario.periodo_id)
+    if vigente_desde is None:
+        vigente_desde = periodo.fecha_inicio if anterior is None else hoy()
+        vigente_desde = min(max(vigente_desde, periodo.fecha_inicio), periodo.fecha_fin)
+    if not periodo.fecha_inicio <= vigente_desde <= periodo.fecha_fin:
+        raise ErrorNegocio(
+            f"La fecha de vigencia debe estar dentro del periodo "
+            f"({periodo.fecha_inicio} a {periodo.fecha_fin})",
+            422,
+        )
+    if anterior is not None and anterior.vigente_desde and vigente_desde <= anterior.vigente_desde:
+        raise ErrorNegocio(
+            f"La nueva versión debe regir después del {anterior.vigente_desde}, "
+            "fecha desde la que rige la versión actual",
+            422,
+        )
     avisos = advertencias(sesion, horario)
     if avisos and not aceptar_advertencias:
         raise ErrorNegocio("Revisa las advertencias antes de confirmar", 409, avisos)
 
-    anterior = vigente(sesion, horario.docente_id, horario.periodo_id)
     if anterior is not None:
         anterior.estado = "historico"
+        anterior.vigente_hasta = vigente_desde - timedelta(days=1)
         auditar(
             sesion,
             usuario,
@@ -369,10 +397,15 @@ def confirmar(sesion: Session, usuario: Usuario, id_: int, aceptar_advertencias:
             "horario",
             anterior.id,
             antes={"estado": "vigente"},
-            despues={"estado": "historico", "reemplazado_por": horario.id},
+            despues={
+                "estado": "historico",
+                "reemplazado_por": horario.id,
+                "vigente_hasta": anterior.vigente_hasta,
+            },
         )
         sesion.flush()  # libera el índice de "un vigente" antes de marcar el nuevo
     horario.estado = "vigente"
+    horario.vigente_desde = vigente_desde
     horario.confirmado_por_id = usuario.id
     horario.confirmado_en = datetime.now(UTC)
     auditar(
@@ -382,7 +415,11 @@ def confirmar(sesion: Session, usuario: Usuario, id_: int, aceptar_advertencias:
         "horario",
         horario.id,
         antes={"estado": "borrador"},
-        despues={"estado": "vigente", "advertencias_aceptadas": avisos},
+        despues={
+            "estado": "vigente",
+            "vigente_desde": vigente_desde,
+            "advertencias_aceptadas": avisos,
+        },
     )
     sesion.commit()
     return horario

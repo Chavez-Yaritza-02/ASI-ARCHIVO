@@ -3,7 +3,7 @@
 Sistema de Asistencia y Archivo Digital de la Jefatura de Electromecánica,
 Tecnológico Superior de Jalisco, campus Zapopan.
 
-> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 3.
+> Documento vivo: se actualiza al cerrar cada etapa. Última actualización: Etapa 4.
 
 ## 1. Objetivo
 
@@ -84,6 +84,7 @@ ASI-ARCHIVO/
 │   │   ├── db/             # conexión a PostgreSQL
 │   │   ├── models/         # tablas (SQLAlchemy)
 │   │   ├── importers/      # OCR de horarios y comparación con catálogos
+│   │   ├── reports/        # reportes PDF y Excel
 │   │   ├── schemas/        # validación de entrada y salida (Pydantic)
 │   │   └── services/       # reglas de negocio y auditoría
 │   └── tests/
@@ -102,8 +103,7 @@ ASI-ARCHIVO/
 └── .github/workflows/      # pruebas automáticas
 ```
 
-Se agregarán carpetas solo cuando se necesiten: `server/app/reports/` (Etapa 7) y
-`deploy/` (Etapa 8). El código de OCR vive en `server/app/importers/` desde la Etapa 3.
+Se agregará `deploy/` en la Etapa 8. El código de OCR vive en `server/app/importers/` desde la Etapa 3.
 
 ## 5. Modelo de datos
 
@@ -117,7 +117,7 @@ Se agregarán carpetas solo cuando se necesiten: `server/app/reports/` (Etapa 7)
 | `rol_permiso`, `usuario_rol` | Relaciones muchos a muchos |
 | `auditoria` | Quién hizo qué, cuándo y desde qué IP; valores antes/después en JSONB. **Solo inserción** (lo garantiza un *trigger*) |
 
-**Roles iniciales:** `administrador` tiene los 13 permisos. `consulta` solo tiene los
+**Roles iniciales:** `administrador` tiene los 14 permisos. `consulta` solo tiene los
 permisos de lectura (`*.ver`). Los permisos se reasignan en la base de datos sin tocar código.
 
 ### Implementado en la Etapa 2
@@ -242,14 +242,59 @@ computadoras Windows y la Mac solo envían el archivo y muestran la revisión. E
 servidor Windows, si Tesseract no está en el PATH, se indica su ruta con
 `ASI_TESSERACT_CMD`. `ASI_OCR_PROCESOS` limita el número de procesos de OCR.
 
+### Implementado en la Etapa 4: bitácora diaria
+
+**Unidad de registro: docente + fecha + turno.** Es una asistencia general (no por
+clase), separada por turno: *matutino* si la actividad empieza antes de las 14:00 y
+*vespertino* desde las 14:00 (`asi_shared.turno_de`, misma regla en servidor y cliente).
+
+| Tabla | Propósito |
+|---|---|
+| `asistencia` | Registro real: estado (`asistio / retardo / falto / justificado`), hora real de entrada y salida, observaciones, justificación, copia de lo programado (horario, inicio y fin), si se registró en día inhábil por excepción y número de correcciones. Única por docente, fecha y turno |
+| `incidencia` | Nota manual del día (comisión, permiso, salida anticipada, cambio de aula, otra), general o de un docente/turno. Se anula, no se borra |
+| `calendario_evento` | Día inhábil, vacaciones o suspensión, de uno o varios días, todo el día o un turno. Tipo `habil` = excepción autorizada que gana sobre los anteriores |
+| `horario.vigente_desde / vigente_hasta` | Fechas en que rigió cada versión. Al confirmar una versión nueva, la anterior rige hasta el día previo |
+
+**Reglas:**
+- La lista del día **se calcula**, no se guarda: docentes con actividades ese día según
+  la versión de horario que regía en esa fecha. Sin registro = *pendiente de
+  verificar*; en día inhábil = *día inhábil*. **El sistema nunca genera faltas.**
+- Domingo y fechas fuera de un periodo no tienen lista.
+- Registrar: no se duplica (docente, fecha, turno); solo si el docente tenía actividades
+  en ese turno; nada a futuro salvo justificaciones; en día inhábil solo con
+  excepción autorizada (`asistencia.corregir`). Validaciones: una falta no lleva horas,
+  un retardo lleva hora de entrada, un justificado lleva justificación.
+- Corregir: siempre con motivo; corregir días anteriores requiere `asistencia.corregir`.
+  El historial (auditoría con antes, después, usuario y motivo) se consulta por registro.
+- Periodo cerrado: la bitácora queda de solo lectura.
+- Un retardo se sugiere (no se impone) cuando la entrada rebasa la tolerancia de 10 min.
+
+**Reportes** (`app/reports/bitacora.py`): bitácora del día y reporte por rango (máx. 93
+días, por docente y turno) en **PDF** (carta horizontal, con encabezado institucional,
+resumen, incidencias, espacio para firmas «Elaboró / Vo. Bo.» y pie con fecha de
+generación) y **Excel** (hoja con filtros y hoja de resumen). Distinguen lo registrado de
+lo *pendiente de verificar*. Se generan con reportlab y openpyxl (Python puro: igual en
+Windows). El texto del encabezado se configura con `ASI_INSTITUCION` y `ASI_DEPENDENCIA`.
+
+**Endpoints:**
+
+| Ruta | Permiso |
+|---|---|
+| `GET /bitacora?fecha&turno&docente_id&estado` | `asistencia.ver` |
+| `GET /bitacora/exportar?fecha&formato=pdf\|xlsx` · `GET /bitacora/reporte?desde&hasta&docente_id&turno&formato` | `reportes.generar` |
+| `POST /asistencias` · `PATCH /asistencias/{id}` (con `motivo`) | `asistencia.registrar` (+ `asistencia.corregir` para días anteriores o días inhábiles) |
+| `GET /asistencias/{id}/historial` | `asistencia.ver` |
+| `GET/POST /incidencias`, `PATCH /incidencias/{id}`, `POST /incidencias/{id}/anular` | ver: `asistencia.ver`; cambios: `asistencia.registrar` |
+| `GET/POST /calendario`, `PUT /calendario/{id}`, `POST /calendario/{id}/anular` | ver: `asistencia.ver`; cambios: `periodos.gestionar` |
+
+La fecha de "hoy" se toma en la zona horaria de la Jefatura (`ASI_ZONA_HORARIA`,
+America/Mexico_City), no en la del servidor. En Windows se usa el paquete `tzdata`.
+
 ### Planeado
 
-**Asistencia (Etapa 4)**
-- `asistencia_diaria`: docente, fecha, estado, motivo, observaciones, justificante y
-  quién lo registró. Restricción `UNIQUE(docente, fecha)`.
-- `asistencia_clase` (futuro): por bloque y fecha. Convive con la tabla diaria, así
+**Asistencia por clase (futuro)**
+- `asistencia_clase`: por bloque y fecha. Convivirá con `asistencia` (por turno), así
   que los registros anteriores no se pierden.
-- `incidencia`.
 
 **Documentos (Etapa 6)**
 - `categoria_documento`.
@@ -294,7 +339,7 @@ servidor Windows, si Tesseract no está en el PATH, se indica su ruta con
 1. Inicio de sesión con roles. ✅ (Etapa 1)
 2. Docentes y periodos. ✅ (Etapa 2)
 3. Horarios: captura manual ✅ (Etapa 2) e importación asistida del ZIP de PDFs ✅ (Etapa 3).
-4. Bitácora diaria con registro de estado, motivo, justificante e historial.
+4. Bitácora diaria con registro de estado, motivo, justificante e historial. ✅ (Etapa 4; el archivo del justificante llega en la Etapa 6)
 5. Buscador con "¿dónde debería estar ahora?".
 6. Servidor desplegado con HTTPS y respaldos.
 
@@ -306,8 +351,8 @@ servidor Windows, si Tesseract no está en el PATH, se indica su ruta con
 | 1b | Prueba de OCR con los PDFs reales (solo local) | ✅ Completa ([resultados](EVALUACION_OCR.md)) |
 | 2 | Docentes, periodos, catálogos, captura y edición de horarios con versiones | ✅ Completa |
 | 3 | Importación ZIP → PDF → OCR → revisión editable → borrador | ✅ Completa ([resultados](EVALUACION_OCR.md#etapa-3-prueba-controlada-del-importador)) |
-| 4 | Bitácora diaria y registro de asistencia | Siguiente (pendiente de autorización) |
-| 5 | Buscador, horarios por grupo, cruces, ubicación programada | |
+| 4 | Bitácora diaria, calendario institucional, incidencias y reportes PDF/Excel | ✅ Completa |
+| 5 | Buscador, horarios por grupo, cruces, ubicación programada | Siguiente (pendiente de autorización) |
 | 6 | Archivo digital de documentos | |
 | 7 | Reportes PDF y Excel | |
 | 8 | Servidor, instaladores, respaldos y revisión de seguridad | |
@@ -336,3 +381,8 @@ servidor Windows, si Tesseract no está en el PATH, se indica su ruta con
 | 2026-11-04 | No se guarda el PDF original, solo su SHA-256 y recortes de celdas | Minimiza datos personales almacenados; el archivo digital llegará en la Etapa 6 |
 | 2026-11-04 | OCR en el servidor, en segundo plano y en varios procesos | Clientes Windows sin Tesseract; 26 PDF en ~12 s sin bloquear la API |
 | 2026-11-04 | Pruebas con PDF ficticios generados por código | Las pruebas no pueden contener datos reales; los reales solo en una base aislada |
+| 2026-11-04 | Asistencia por docente + fecha + turno (14:00 divide los turnos) | Pedido de la Jefatura; sigue siendo general (no por clase) y deja lista la asistencia por clase |
+| 2026-11-04 | La lista del día se calcula; "pendiente" nunca se guarda | Nunca suponer asistencia ni generar faltas automáticamente |
+| 2026-11-04 | Vigencia con fechas en cada versión de horario | La bitácora de días pasados usa el horario que regía entonces |
+| 2026-11-04 | Corrección = motivo obligatorio; días anteriores requieren `asistencia.corregir` | Correcciones autorizadas y trazables |
+| 2026-11-04 | Reportes con reportlab y openpyxl | Python puro, sin dependencias del sistema: funcionan igual en Windows |
