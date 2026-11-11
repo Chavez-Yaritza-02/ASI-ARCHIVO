@@ -201,6 +201,8 @@ class VistaHorarios(QWidget):
         self.boton_guardar = QPushButton("Guardar cambios", objectName="primario")
         self.boton_descartar = QPushButton("Descartar borrador")
         self.boton_confirmar = QPushButton("Confirmar como vigente")
+        self.boton_vigencia = QPushButton("Confirmar / corregir fechas reales")
+        self.boton_vigencia.setVisible(self.puede_confirmar)
         self.boton_guardar.setVisible(self.puede_editar)
         self.boton_descartar.setVisible(self.puede_editar)
         self.boton_confirmar.setVisible(self.puede_confirmar)
@@ -209,7 +211,12 @@ class VistaHorarios(QWidget):
             QLabel("Doble clic en una celda para editarla; Supr para vaciar.", objectName="suave")
         )
         acciones.addStretch()
-        for b in (self.boton_descartar, self.boton_guardar, self.boton_confirmar):
+        for b in (
+            self.boton_vigencia,
+            self.boton_descartar,
+            self.boton_guardar,
+            self.boton_confirmar,
+        ):
             acciones.addWidget(b)
         panel_cuadricula = QWidget()
         capa_c = QVBoxLayout(panel_cuadricula)
@@ -243,6 +250,7 @@ class VistaHorarios(QWidget):
         self.boton_guardar.clicked.connect(self.guardar)
         self.boton_descartar.clicked.connect(self.descartar)
         self.boton_confirmar.clicked.connect(self.confirmar_vigente)
+        self.boton_vigencia.clicked.connect(self.confirmar_fechas)
         self.cuadricula.cellDoubleClicked.connect(self.editar_celda)
         QShortcut(QKeySequence.Delete, self.cuadricula, self.vaciar_seleccion)
         QShortcut(QKeySequence(Qt.Key_Backspace), self.cuadricula, self.vaciar_seleccion)
@@ -409,11 +417,19 @@ class VistaHorarios(QWidget):
                 texto += " · periodo cerrado (solo lectura)"
             elif h["estado"] in ("vigente", "historico"):
                 texto += " · para cambiarla crea una nueva versión"
+            if h["estado"] in ("vigente", "historico"):
+                texto += (
+                    f" · vigencia confirmada: {h['vigente_desde']} a "
+                    f"{h['vigente_hasta'] or 'sin fecha final'}"
+                    if h.get("vigencia_confirmada")
+                    else " · VIGENCIA DESCONOCIDA: excluida de consultas por fecha"
+                )
             self.estado.setText(texto)
             self.estado.setStyleSheet(
                 f"color: {COLORES_ESTADO.get(h['estado'], '')}; font-weight: 600;"
             )
         editable = self._editable()
+        self.boton_vigencia.setEnabled(bool(h and h["estado"] in ("vigente", "historico")))
         self.boton_guardar.setEnabled(editable and self.cambios_pendientes)
         self.boton_descartar.setEnabled(editable)
         self.boton_confirmar.setEnabled(
@@ -521,19 +537,41 @@ class VistaHorarios(QWidget):
         self.cargar_versiones(seleccionar=self.horario["id"])
 
     def _pedir_vigencia(self) -> str | None | bool:
-        """Si ya hay una versión vigente, pregunta desde cuándo rige la nueva.
-
-        Devuelve la fecha (texto ISO), None si no hace falta preguntar, o False si se canceló.
-        """
-        if not any(v["estado"] == "vigente" for v in self.versiones.filas):
-            return None
+        """Solicita siempre una fecha real explícita; False indica cancelación."""
         dialogo = DialogoFormulario(
-            "Fecha de vigencia",
+            "Confirma la fecha real de vigencia (no se deduce del periodo)",
             [Campo("vigente_desde", "La nueva versión rige desde", "fecha")],
             {"vigente_desde": date.today().isoformat()},
             padre=self,
         )
         return dialogo.valores()["vigente_desde"] if dialogo.exec() else False
+
+    def confirmar_fechas(self):
+        if not self.horario or not self.puede_confirmar:
+            return
+        h = self.horario
+        dialogo = DialogoFormulario(
+            "Fechas reales verificadas: no se modifican los bloques",
+            [
+                Campo("desde", "Inicio real (AAAA-MM-DD)", obligatorio=True),
+                Campo(
+                    "hasta",
+                    "Fin real (obligatorio para históricos)",
+                    obligatorio=h["estado"] == "historico",
+                ),
+                Campo("motivo", "Motivo y evidencia de las fechas", obligatorio=True),
+            ],
+            {"desde": h.get("vigente_desde"), "hasta": h.get("vigente_hasta")},
+            padre=self,
+        )
+        while dialogo.exec():
+            try:
+                self.api.post(f"/horarios/{h['id']}/vigencia", dialogo.valores())
+            except ErrorApi as e:
+                mostrar_error(self, e)
+                continue
+            self.cargar_versiones(seleccionar=h["id"])
+            break
 
     def confirmar_vigente(self, aceptar: bool = False, vigente_desde: str | None = None) -> None:
         if not self.horario:

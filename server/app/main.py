@@ -8,11 +8,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api import auth, bitacora, catalogos, horarios, importaciones, periodos
+from app.api import auth, bitacora, catalogos, consultas, horarios, importaciones, periodos
 from app.services.comun import ErrorNegocio
 
-app = FastAPI(title="ASI-ARCHIVO API", version="0.4.0")
+app = FastAPI(title="ASI-ARCHIVO API", version="0.5.0")
 app.include_router(auth.router)
+app.include_router(consultas.router)
 app.include_router(catalogos.docentes)
 app.include_router(catalogos.asignaturas)
 app.include_router(catalogos.grupos)

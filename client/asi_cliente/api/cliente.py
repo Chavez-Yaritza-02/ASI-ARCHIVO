@@ -120,6 +120,9 @@ class ClienteApi:
             "POST", ruta, files={"archivo": (nombre, contenido)}, data=datos
         ).json()
 
+    def descargar(self, ruta: str, **params) -> bytes:
+        return self._peticion("GET", ruta, params=params).content
+
     def obtener_bytes(self, ruta: str) -> bytes | None:
         try:
             return self._peticion("GET", ruta).content

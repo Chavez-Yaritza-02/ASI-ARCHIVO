@@ -24,14 +24,13 @@ from app.models import (
     Periodo,
     Usuario,
 )
-from app.services import calendario
+from app.services import calendario, configuracion
 from app.services.comun import ErrorNegocio, NoEncontrado, auditar, hoy, instantanea
 from asi_shared import Permiso, turno_de
 
 ESTADOS = ("pendiente", "inhabil", "asistio", "retardo", "falto", "justificado")
 CAMPOS = ["estado", "hora_entrada", "hora_salida", "observaciones", "justificacion"]
 DIAS_MAXIMOS_RANGO = 93
-TOLERANCIA_RETARDO = timedelta(minutes=10)
 
 
 @dataclass
@@ -69,6 +68,7 @@ def programacion(sesion: Session, fecha: date) -> dict[tuple[int, str], Programa
         select(Horario).where(
             Horario.periodo_id == periodo.id,
             Horario.estado.in_(("vigente", "historico")),
+            Horario.vigencia_confirmada.is_(True),
             Horario.vigente_desde <= fecha,
             or_(Horario.vigente_hasta.is_(None), Horario.vigente_hasta >= fecha),
         )
@@ -152,7 +152,7 @@ def dia(
                 "fuera_de_programacion": p is None,
                 "asistencia": _registro(a) if a else None,
                 "minutos_retardo": _minutos_retardo(inicio, a.hora_entrada) if a else None,
-                "tolerancia_minutos": int(TOLERANCIA_RETARDO.total_seconds() // 60),
+                "tolerancia_minutos": configuracion.tolerancia(sesion),
             }
         )
     resumen = {e: 0 for e in ESTADOS}

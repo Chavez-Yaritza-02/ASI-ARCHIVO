@@ -1,4 +1,4 @@
-"""Configuración de pruebas: usan una base de datos aparte (asi_archivo_test)."""
+"""Configuración de pruebas: usan una base de datos aparte (asi_archivo_pytest)."""
 
 import os
 from pathlib import Path
@@ -19,6 +19,10 @@ def _url_de_pruebas() -> str:
 
 
 os.environ["ASI_DATABASE_URL"] = _url_de_pruebas()
+os.environ["ASI_ENTORNO"] = "pruebas"
+from app.db.proteccion_pruebas import validar_conexion_pruebas, validar_url_pruebas  # noqa: E402
+
+validar_url_pruebas(os.environ["ASI_DATABASE_URL"])
 os.environ.setdefault("ASI_SECRET_KEY", "clave-solo-para-pruebas-" + "x" * 32)
 
 from alembic import command  # noqa: E402
@@ -39,6 +43,7 @@ def base_de_datos():
     """Recrea el esquema con las migraciones reales: así también se prueban."""
     engine = obtener_engine()
     with engine.begin() as conexion:
+        validar_conexion_pruebas(conexion)
         conexion.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
         config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
         config.attributes["connection"] = conexion
@@ -50,6 +55,7 @@ def base_de_datos():
 def limpiar_datos(base_de_datos):
     yield
     with base_de_datos.begin() as conexion:
+        validar_conexion_pruebas(conexion)
         # Solo en pruebas: se desactiva el bloqueo de la auditoría para limpiar.
         conexion.execute(text("ALTER TABLE auditoria DISABLE TRIGGER trg_auditoria_inmutable"))
         conexion.execute(
@@ -61,6 +67,7 @@ def limpiar_datos(base_de_datos):
             )
         )
         conexion.execute(text("ALTER TABLE auditoria ENABLE TRIGGER trg_auditoria_inmutable"))
+        conexion.execute(text("UPDATE configuracion_asistencia SET tolerancia_minutos = 10"))
 
 
 @pytest.fixture
