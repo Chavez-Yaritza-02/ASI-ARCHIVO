@@ -381,6 +381,7 @@ def test_antivirus_falla_cerrado_y_rechaza_infeccion(
     assert subir(cliente, como_admin, b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE").status_code == 422
 
 
+@pytest.mark.solo_postgresql
 def test_versiones_inmutables_y_borrado_prohibido_en_postgresql(cliente, como_admin, sesion):
     d = subir(cliente, como_admin).json()
     for sql in (

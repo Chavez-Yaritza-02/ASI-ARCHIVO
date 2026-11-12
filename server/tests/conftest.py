@@ -1,14 +1,27 @@
-"""Configuración de pruebas: usan una base de datos aparte (asi_archivo_pytest)."""
+"""Configuración de pruebas: usan una base de datos aparte (asi_archivo_pytest).
+
+Por omisión, PostgreSQL. Con ASI_TEST_MOTOR=sqlite, un archivo SQLite temporal nuevo
+(aplicación local): misma suite, mismas reglas. Las pruebas propias de PostgreSQL
+(migraciones de Alembic, roles y privilegios de la base) llevan la marca `solo_postgresql`.
+"""
 
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
 
-
 # Debe definirse antes de importar la app, porque la configuración se lee al importar.
+MOTOR = os.environ.get("ASI_TEST_MOTOR", "postgresql")
+
+
 def _url_de_pruebas() -> str:
     """Toma ASI_TEST_DATABASE_URL del entorno o del archivo .env de la raíz."""
+    if MOTOR == "sqlite":
+        archivo = Path(tempfile.gettempdir()) / "asi_archivo_pytest.sqlite3"
+        for sobrante in (archivo, Path(f"{archivo}-wal"), Path(f"{archivo}-shm")):
+            sobrante.unlink(missing_ok=True)  # siempre una base nueva
+        return f"sqlite:///{archivo}"
     if url := os.environ.get("ASI_TEST_DATABASE_URL"):
         return url
     env = Path(__file__).parents[2] / ".env"
@@ -38,10 +51,40 @@ from app.main import app  # noqa: E402
 CONTRASENA = "contrasena-de-prueba"
 
 
+# Tablas que se vacían entre pruebas (las de catálogos iniciales se conservan).
+TABLAS_DE_PRUEBA = (
+    "usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
+    "periodo, horario, bloque_horario, importacion, importacion_documento, "
+    "importacion_pagina, importacion_celda, calendario_evento, asistencia, "
+    "incidencia, asistencia_hora, documento_asistencia, documento_version, documento"
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    if MOTOR != "sqlite":
+        return
+    saltar = pytest.mark.skip(reason="Propia de PostgreSQL (Alembic, roles o privilegios)")
+    for item in items:
+        if "solo_postgresql" in item.keywords:
+            item.add_marker(saltar)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "solo_postgresql: prueba propia de PostgreSQL")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def base_de_datos():
     """Recrea el esquema con las migraciones reales: así también se prueban."""
     engine = obtener_engine()
+    if MOTOR == "sqlite":
+        from app.db.sqlite_local import crear_esquema
+
+        with engine.connect() as conexion:
+            validar_conexion_pruebas(conexion)
+        crear_esquema(engine)
+        yield engine
+        return
     with engine.begin() as conexion:
         validar_conexion_pruebas(conexion)
         conexion.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
@@ -54,26 +97,37 @@ def base_de_datos():
 @pytest.fixture(autouse=True)
 def limpiar_datos(base_de_datos):
     yield
+    if MOTOR == "sqlite":
+        from app.db.sqlite_local import crear_triggers, quitar_triggers
+        from app.models import Base
+
+        vaciar = {t.strip() for t in TABLAS_DE_PRUEBA.split(",")}
+        with base_de_datos.begin() as conexion:
+            validar_conexion_pruebas(conexion)
+            # Solo en pruebas: se quitan los bloqueos de la auditoría para limpiar.
+            quitar_triggers(conexion)
+            for tabla in reversed(Base.metadata.sorted_tables):
+                if tabla.name in vaciar:
+                    conexion.execute(tabla.delete())
+            crear_triggers(conexion)
+            conexion.execute(text("UPDATE configuracion_asistencia SET tolerancia_minutos = 10"))
+        return
     with base_de_datos.begin() as conexion:
         validar_conexion_pruebas(conexion)
         # Solo en pruebas: se desactiva el bloqueo de la auditoría para limpiar.
         conexion.execute(text("ALTER TABLE auditoria DISABLE TRIGGER trg_auditoria_inmutable"))
-        conexion.execute(
-            text(
-                "TRUNCATE usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
-                "periodo, horario, bloque_horario, importacion, importacion_documento, "
-                "importacion_pagina, importacion_celda, calendario_evento, asistencia, "
-                "incidencia, asistencia_hora, documento_asistencia, documento_version, documento "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
+        conexion.execute(text(f"TRUNCATE {TABLAS_DE_PRUEBA} RESTART IDENTITY CASCADE"))
         conexion.execute(text("ALTER TABLE auditoria ENABLE TRIGGER trg_auditoria_inmutable"))
         conexion.execute(text("UPDATE configuracion_asistencia SET tolerancia_minutos = 10"))
 
 
 @pytest.fixture
 def sesion(base_de_datos):
-    with Session(base_de_datos) as s:
+    motor = base_de_datos
+    if MOTOR == "sqlite":
+        # Sesión auxiliar de las pruebas: no deja lecturas abiertas que bloqueen a la API.
+        motor = base_de_datos.execution_options(sqlite_por_instruccion=True)
+    with Session(motor) as s:
         yield s
 
 

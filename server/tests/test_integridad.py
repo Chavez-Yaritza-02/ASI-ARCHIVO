@@ -75,6 +75,7 @@ def test_cli_y_migraciones_rechazan_conexion_inyectada():
     conexion.execute.assert_not_called()
 
 
+@pytest.mark.solo_postgresql
 def test_pytest_rechaza_variable_incorrecta_en_recoleccion():
     entorno = {
         **os.environ,
@@ -158,6 +159,7 @@ def test_confirmar_fechas_con_permiso_validacion_y_auditoria(
     )
 
 
+@pytest.mark.solo_postgresql
 def test_migracion_desde_etapa4_conserva_versiones_y_evidencia(base_de_datos):
     # Esquema temporal dentro de la BD exclusiva; toda la simulación hace rollback.
     with base_de_datos.connect() as c:
@@ -243,6 +245,7 @@ def test_subprocesos_rechazan_destino_ficticio_no_autorizado(comando, entrada):
     assert "destino PostgreSQL no autorizado" in resultado.stderr
 
 
+@pytest.mark.solo_postgresql
 def test_connect_args_no_puede_cambiar_el_destino(base_de_datos, monkeypatch):
     import psycopg
 
@@ -254,6 +257,7 @@ def test_connect_args_no_puede_cambiar_el_destino(base_de_datos, monkeypatch):
     conectar.assert_not_called()
 
 
+@pytest.mark.solo_postgresql
 def test_libpq_no_puede_redirigir_conexion(base_de_datos, monkeypatch):
     monkeypatch.setenv("PGOPTIONS", "-c search_path=otro")
     engine = create_engine(base_de_datos.url)

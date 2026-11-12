@@ -2,8 +2,10 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.db.tipos import FechaHora, ahora_bd
 
 # Nombres predecibles para índices y restricciones: facilita las migraciones.
 _CONVENCION = {
@@ -22,7 +24,7 @@ class Base(DeclarativeBase):
 class ConFechas:
     """Agrega fechas de creación y última modificación."""
 
-    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    creado_en: Mapped[datetime] = mapped_column(FechaHora(), server_default=ahora_bd())
     actualizado_en: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        FechaHora(), server_default=ahora_bd(), onupdate=ahora_bd()
     )

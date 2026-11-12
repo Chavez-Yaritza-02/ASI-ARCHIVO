@@ -20,7 +20,6 @@ from typing import Any
 from sqlalchemy import (
     CheckConstraint,
     Date,
-    DateTime,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -28,9 +27,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db.tipos import FechaHora, JSONCompatible
 from app.models.base import Base, ConFechas
 from app.models.catalogos import Docente
 
@@ -111,7 +110,7 @@ class PaginaImportada(Base):
 
     # Encabezado leído (del QR si existe; si no, del OCR).
     qr_texto: Mapped[str | None] = mapped_column(Text)
-    encabezado: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    encabezado: Mapped[dict[str, Any] | None] = mapped_column(JSONCompatible)
     docente_texto: Mapped[str] = mapped_column(String(150), default="")
     nomina: Mapped[str | None] = mapped_column(String(20))
     periodo_texto: Mapped[str | None] = mapped_column(String(60))
@@ -125,7 +124,7 @@ class PaginaImportada(Base):
     duplicado_de_id: Mapped[int | None] = mapped_column(ForeignKey("importacion_pagina.id"))
     horario_id: Mapped[int | None] = mapped_column(ForeignKey("horario.id"))
     revisado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"))
-    revisado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revisado_en: Mapped[datetime | None] = mapped_column(FechaHora())
 
     documento: Mapped[DocumentoImportado] = relationship(back_populates="paginas")
     docente: Mapped[Docente | None] = relationship(lazy="joined")

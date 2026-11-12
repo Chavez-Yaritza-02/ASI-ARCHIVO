@@ -12,10 +12,16 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    and_,
+    literal_column,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.db.tipos import segundos_entre
 from app.models.base import Base, ConFechas
+
+DURACION = segundos_entre("programado_fin", "programado_inicio")
 
 
 class AsistenciaHora(ConFechas, Base):
@@ -31,15 +37,19 @@ class AsistenciaHora(ConFechas, Base):
             "estado IN ('asistio','retardo','falto','justificado','parcial')", name="estado"
         ),
         CheckConstraint("turno IN ('matutino','vespertino')", name="turno"),
+        # La duración se escribe en la sintaxis de cada base (ver app.db.tipos).
         CheckConstraint(
-            "programado_fin > programado_inicio AND "
-            "EXTRACT(EPOCH FROM (programado_fin-programado_inicio)) <= 3600",
+            and_(
+                text("programado_fin > programado_inicio"),
+                DURACION <= 3600,
+            ),
             name="tramo",
         ),
         CheckConstraint(
-            "minutos_cumplidos >= 0 AND minutos_justificados >= 0 AND "
-            "(minutos_cumplidos + minutos_justificados) * 60 <= "
-            "EXTRACT(EPOCH FROM (programado_fin-programado_inicio))",
+            and_(
+                text("minutos_cumplidos >= 0 AND minutos_justificados >= 0"),
+                literal_column("(minutos_cumplidos + minutos_justificados) * 60") <= DURACION,
+            ),
             name="minutos",
         ),
         CheckConstraint(

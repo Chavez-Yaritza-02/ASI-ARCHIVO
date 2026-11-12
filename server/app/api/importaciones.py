@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import SesionDB, requiere_permiso
 from app.db.sesion import obtener_engine
+from app.db.sqlite_local import motor_de_escritura
 from app.models import DocumentoImportado, Importacion, PaginaImportada, Periodo, Usuario
 from app.schemas.horarios import ORDEN_DIAS, HorarioDetalle, Referencia, detalle
 from app.services import importacion as servicio
@@ -214,7 +215,8 @@ def _periodo_nombre(sesion: Session, periodo_id: int) -> str:
 
 
 def _procesar_en_segundo_plano(importacion_id: int, trabajos: list[tuple[int, bytes]]) -> None:
-    fabrica = sessionmaker(bind=obtener_engine(), expire_on_commit=False)
+    # Guarda resultados: en SQLite cada transacción reserva la base (son cortas, por documento).
+    fabrica = sessionmaker(bind=motor_de_escritura(obtener_engine()), expire_on_commit=False)
     with fabrica() as sesion:
         servicio.procesar(sesion, importacion_id, trabajos)
 
@@ -242,7 +244,12 @@ async def importar(
         importacion.estado = "terminada"
         importacion.mensaje = "Todos los PDF ya se habían importado"
         sesion.commit()
-    return _salida(sesion, importacion, con_documentos=False)
+    salida = _salida(sesion, importacion, con_documentos=False)
+    # Terminar la transacción antes del OCR: en SQLite (aplicación local) la sesión de esta
+    # petición reservaría la base mientras el OCR intenta guardar sus resultados.
+    sesion.commit()
+    sesion.close()
+    return salida
 
 
 @router.get("", response_model=list[ImportacionSalida])

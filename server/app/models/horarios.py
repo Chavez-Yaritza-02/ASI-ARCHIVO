@@ -16,7 +16,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -28,6 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db.tipos import FechaHora
 from app.models.base import Base, ConFechas
 from app.models.catalogos import Asignatura, Aula, Docente, Grupo
 
@@ -43,6 +43,7 @@ class Periodo(ConFechas, Base):
             "estado",
             unique=True,
             postgresql_where=text("estado = 'activo'"),
+            sqlite_where=text("estado = 'activo'"),
         ),
     )
 
@@ -76,6 +77,7 @@ class Horario(ConFechas, Base):
             "periodo_id",
             unique=True,
             postgresql_where=text("estado = 'vigente'"),
+            sqlite_where=text("estado = 'vigente'"),
         ),
     )
 
@@ -92,7 +94,7 @@ class Horario(ConFechas, Base):
     basado_en_id: Mapped[int | None] = mapped_column(ForeignKey("horario.id"))
     creado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"))
     confirmado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuario.id"))
-    confirmado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmado_en: Mapped[datetime | None] = mapped_column(FechaHora())
     # Fechas en que esta versión rige (se fijan al confirmarla y al ser reemplazada).
     # La bitácora usa la versión que regía en cada fecha, no la actual.
     vigente_desde: Mapped[date | None] = mapped_column(Date)

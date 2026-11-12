@@ -1,13 +1,28 @@
-"""Barrera de pruebas: destino fijo y rol PostgreSQL sin privilegios administrativos."""
+"""Barrera de pruebas: destino fijo y rol PostgreSQL sin privilegios administrativos.
+
+También admite, para la aplicación local, un archivo SQLite de pruebas con nombre fijo
+dentro del directorio temporal del sistema. Cualquier otro destino se bloquea.
+"""
 
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 from sqlalchemy import Engine, event
 from sqlalchemy.engine import make_url
 
 BASE_PRUEBAS = "asi_archivo_pytest"
 USUARIO_PRUEBAS = "asi_archivo_pytest"
+ARCHIVO_SQLITE_PRUEBAS = "asi_archivo_pytest.sqlite3"
+
+
+def _sqlite_de_pruebas(ruta: str | None) -> bool:
+    if not ruta:
+        return False
+    archivo = Path(ruta).resolve()
+    temporal = Path(tempfile.gettempdir()).resolve()
+    return archivo.name == ARCHIVO_SQLITE_PRUEBAS and temporal in archivo.parents
 
 
 def en_pruebas() -> bool:
@@ -16,6 +31,10 @@ def en_pruebas() -> bool:
 
 def validar_url_pruebas(url) -> None:
     url = make_url(url)
+    if url.get_backend_name() == "sqlite":
+        if url.drivername != "sqlite" or url.query or not _sqlite_de_pruebas(url.database):
+            raise RuntimeError("Pruebas bloqueadas: archivo SQLite no autorizado")
+        return
     if (
         url.drivername != "postgresql+psycopg"
         or url.database != BASE_PRUEBAS
@@ -29,6 +48,11 @@ def validar_url_pruebas(url) -> None:
 
 def validar_conexion_pruebas(conexion) -> None:
     validar_url_pruebas(conexion.engine.url)
+    if conexion.dialect.name == "sqlite":
+        archivos = [f[2] for f in conexion.exec_driver_sql("PRAGMA database_list").all()]
+        if not archivos or not all(_sqlite_de_pruebas(a) for a in archivos if a):
+            raise RuntimeError("Pruebas bloqueadas: archivo SQLite no autorizado")
+        return
     fila = conexion.exec_driver_sql(
         "SELECT current_database(), current_user, r.rolsuper, r.rolcreatedb, "
         "r.rolcreaterole, r.rolreplication, r.rolbypassrls, "
@@ -41,6 +65,11 @@ def validar_conexion_pruebas(conexion) -> None:
 
 @event.listens_for(Engine, "do_connect")
 def _antes_de_conectar(dialect, registro, argumentos, opciones):
+    if en_pruebas() and dialect.name == "sqlite":
+        ruta = argumentos[0] if argumentos else opciones.get("database")
+        if not _sqlite_de_pruebas(ruta):
+            raise RuntimeError("Pruebas bloqueadas: archivo SQLite no autorizado")
+        return
     if en_pruebas():
         # Los parámetros efectivos incluyen también cualquier connect_args.
         permitidos = {"dbname", "user", "password", "host", "port", "connect_timeout", "context"}

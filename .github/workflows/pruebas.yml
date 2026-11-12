@@ -54,6 +54,10 @@ jobs:
         run: uv run ruff check . && uv run ruff format --check .
       - name: Pruebas
         run: uv run pytest -q
+      - name: Pruebas con SQLite (aplicación local, base temporal nueva)
+        run: uv run pytest -q -rs
+        env:
+          ASI_TEST_MOTOR: sqlite
 
   cliente-portable:
     name: Cliente (${{ matrix.os }})

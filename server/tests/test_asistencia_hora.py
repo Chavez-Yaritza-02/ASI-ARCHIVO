@@ -473,6 +473,7 @@ def test_filtros_rango_y_fechas_sin_clase(cliente, como_admin, escuela_horas):
     )
 
 
+@pytest.mark.solo_postgresql
 def test_migracion_aditiva_no_convierte_ni_modifica_registros(base_de_datos):
     with base_de_datos.connect() as c:
         transaccion = c.begin()
