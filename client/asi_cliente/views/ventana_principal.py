@@ -285,10 +285,19 @@ class VentanaPrincipal(QMainWindow):
             self.servidor = describir_servidor(api.url, api.identidad())
             self.franja_servidor.setText(self.servidor.texto)
             self.franja_servidor.setProperty("tipo", self.servidor.tipo)
-            self.franja_servidor.setToolTip(
-                f"Esta ventana trabaja con {api.url}. Lo que guardes queda en ese servidor."
-            )
-            self.setWindowTitle(f"ASI-ARCHIVO · {self.servidor.titulo} · {self.servidor.direccion}")
+            if getattr(api, "es_local", False):
+                self.franja_servidor.setToolTip(
+                    "Lo que guardes queda en la base de esta computadora "
+                    f"({api.carpeta_local}). No se usa internet."
+                )
+                self.setWindowTitle(f"ASI-ARCHIVO · {self.servidor.titulo}")
+            else:
+                self.franja_servidor.setToolTip(
+                    f"Esta ventana trabaja con {api.url}. Lo que guardes queda en ese servidor."
+                )
+                self.setWindowTitle(
+                    f"ASI-ARCHIVO · {self.servidor.titulo} · {self.servidor.direccion}"
+                )
         else:
             self.franja_servidor.hide()
         self.resize(1280, 800)

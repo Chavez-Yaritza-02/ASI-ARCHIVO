@@ -403,3 +403,50 @@ def test_permisos_de_importacion(cliente, como_admin, como_consulta, catalogo):
     r = cliente.post(f"/importaciones/paginas/{id_}/aprobar", json={}, headers=como_consulta)
     assert r.status_code == 403
     assert cliente.get("/importaciones").status_code == 401  # sin sesión
+
+
+def test_modo_local_el_ocr_no_detiene_la_respuesta(
+    cliente, como_admin, catalogo, monkeypatch, sesion
+):
+    """En la aplicación local la API corre dentro de la ventana: el OCR va en un hilo aparte
+    y la importación responde de inmediato, con el avance visible mientras termina."""
+    import threading
+
+    from app.api import importaciones as rutas
+    from app.core.config import obtener_configuracion
+    from app.db.sqlite_local import marcar_importaciones_interrumpidas
+
+    monkeypatch.setattr(obtener_configuracion(), "modo_local", True)
+    soltar, empezo, termino = threading.Event(), threading.Event(), threading.Event()
+    original = rutas.servicio.procesar
+
+    def ocr_lento(*args):
+        empezo.set()
+        assert soltar.wait(30)
+        original(*args)
+        termino.set()
+
+    monkeypatch.setattr(rutas.servicio, "procesar", ocr_lento)
+    r = subir(cliente, como_admin, catalogo["periodo"], "uno.pdf", pdf_escaneado(UNO))
+    assert r.status_code == 202, r.text
+    assert empezo.wait(10) and not termino.is_set()  # ya respondió; el OCR sigue
+    id_ = r.json()["id"]
+    assert cliente.get(f"/importaciones/{id_}", headers=como_admin).json()["estado"] == "procesando"
+    soltar.set()
+    assert termino.wait(120)
+    assert (
+        cliente.get(f"/importaciones/{id_}", headers=como_admin).json()["estado"] == "en_revision"
+    )
+    # Una importación que quedó a medias (la aplicación se cerró) se marca con error al abrir.
+    if sesion.get_bind().dialect.name == "sqlite":
+        soltar.clear()
+        empezo.clear()
+        termino.clear()
+        bloqueada = subir(cliente, como_admin, catalogo["periodo"], "dos.pdf", pdf_escaneado(DOS))
+        assert empezo.wait(10)
+        assert marcar_importaciones_interrumpidas(sesion.get_bind()) == 1
+        detalle = cliente.get(f"/importaciones/{bloqueada.json()['id']}", headers=como_admin)
+        assert detalle.json()["estado"] == "error"
+        assert "se cerró" in detalle.json()["mensaje"]
+        soltar.set()
+        termino.wait(120)

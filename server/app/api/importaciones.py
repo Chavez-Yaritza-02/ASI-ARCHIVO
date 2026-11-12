@@ -4,6 +4,7 @@ Todo requiere `horarios.editar`: la importación contiene datos sin revisar y so
 borradores. Confirmar la versión vigente sigue en /horarios/{id}/confirmar.
 """
 
+import threading
 from datetime import date, datetime
 from typing import Annotated
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import SesionDB, requiere_permiso
+from app.core.config import obtener_configuracion
 from app.db.sesion import obtener_engine
 from app.db.sqlite_local import motor_de_escritura
 from app.models import DocumentoImportado, Importacion, PaginaImportada, Periodo, Usuario
@@ -238,17 +240,29 @@ async def importar(
     importacion, trabajos = servicio.iniciar(
         sesion, usuario, periodo_id, archivo.filename or "archivo", contenido
     )
-    if trabajos:
+    en_hilo = bool(trabajos) and obtener_configuracion().modo_local
+    if trabajos and not en_hilo:
         tareas.add_task(_procesar_en_segundo_plano, importacion.id, trabajos)
-    else:
+    elif not trabajos:
         importacion.estado = "terminada"
         importacion.mensaje = "Todos los PDF ya se habían importado"
         sesion.commit()
     salida = _salida(sesion, importacion, con_documentos=False)
+    importacion_id = importacion.id
     # Terminar la transacción antes del OCR: en SQLite (aplicación local) la sesión de esta
     # petición reservaría la base mientras el OCR intenta guardar sus resultados.
     sesion.commit()
     sesion.close()
+    if en_hilo:
+        # Aplicación local: la API corre dentro del programa y una tarea de fondo de FastAPI
+        # retendría la respuesta (y la ventana) hasta terminar el OCR. Un hilo aparte deja
+        # responder de inmediato; si se cierra a medias, al abrir se marca con error.
+        threading.Thread(
+            target=_procesar_en_segundo_plano,
+            args=(importacion_id, trabajos),
+            name=f"ocr-importacion-{importacion_id}",
+            daemon=True,
+        ).start()
     return salida
 
 

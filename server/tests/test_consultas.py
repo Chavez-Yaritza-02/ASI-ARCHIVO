@@ -366,4 +366,16 @@ def test_modelos_y_migraciones_coinciden(base_de_datos):
     from alembic.migration import MigrationContext
 
     with base_de_datos.connect() as c:
-        assert compare_metadata(MigrationContext.configure(c), Base.metadata) == []
+        diferencias = compare_metadata(MigrationContext.configure(c), Base.metadata)
+    if base_de_datos.dialect.name == "sqlite":
+        # La base local tiene además sus tablas propias (app.local.modelos), y solo esas.
+        from app.local.modelos import METADATOS_LOCALES
+
+        propias = {d[1].name for d in diferencias if d[0] == "remove_table"} & set(
+            METADATOS_LOCALES.tables
+        )
+        assert propias == set(METADATOS_LOCALES.tables)
+        diferencias = [
+            d for d in diferencias if not (d[0] == "remove_table" and d[1].name in propias)
+        ]
+    assert diferencias == []

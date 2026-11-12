@@ -5,11 +5,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 
 from app.api.deps import SesionDB, UsuarioActual
-from app.core.seguridad import crear_token, sello_usuario, verificar_contrasena
+from app.core.seguridad import (
+    crear_token,
+    hashear_contrasena,
+    sello_usuario,
+    verificar_contrasena,
+)
+from app.local.cuenta import validar_contrasena
 from app.models import Auditoria, Usuario
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
@@ -84,3 +90,58 @@ def usuario_conectado(usuario: UsuarioActual) -> UsuarioRespuesta:
         roles=sorted(r.nombre for r in usuario.roles),
         permisos=sorted(usuario.permisos),
     )
+
+
+class CambioContrasena(BaseModel):
+    actual: Annotated[str, Field(max_length=128)]
+    nueva: Annotated[str, Field(max_length=128)]
+
+
+@router.post("/contrasena", response_model=TokenRespuesta)
+def cambiar_contrasena(
+    datos: CambioContrasena, sesion: SesionDB, usuario: UsuarioActual, request: Request
+) -> TokenRespuesta:
+    """Cambia la contraseña propia. Cierra las demás sesiones y devuelve una sesión nueva."""
+    ip = request.client.host if request.client else None
+    fallos = sesion.scalar(
+        select(func.count())
+        .select_from(Auditoria)
+        .where(
+            Auditoria.accion == "contrasena_fallida",
+            Auditoria.usuario_id == usuario.id,
+            Auditoria.fecha >= datetime.now(UTC) - timedelta(minutes=15),
+        )
+    )
+    if fallos >= 10:
+        raise HTTPException(
+            429, "Demasiados intentos; espera 15 minutos", headers={"Retry-After": "900"}
+        )
+    if not verificar_contrasena(datos.actual, usuario.hash_contrasena):
+        sesion.add(
+            Auditoria(
+                usuario_id=usuario.id,
+                accion="contrasena_fallida",
+                entidad="usuario",
+                entidad_id=str(usuario.id),
+                ip=ip,
+            )
+        )
+        sesion.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "La contraseña actual no es correcta")
+    validar_contrasena(datos.nueva)
+    if datos.nueva == datos.actual:
+        raise HTTPException(422, "La contraseña nueva debe ser distinta de la actual")
+    # Cambia la huella y la fecha de actualización: las demás sesiones dejan de valer.
+    usuario.hash_contrasena = hashear_contrasena(datos.nueva)
+    sesion.add(
+        Auditoria(
+            usuario_id=usuario.id,
+            accion="cambiar_contrasena",
+            entidad="usuario",
+            entidad_id=str(usuario.id),
+            ip=ip,
+        )
+    )
+    sesion.commit()
+    sesion.refresh(usuario)
+    return TokenRespuesta(access_token=crear_token(usuario.id, sello_usuario(usuario)))

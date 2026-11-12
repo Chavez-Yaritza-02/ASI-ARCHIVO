@@ -18,6 +18,7 @@ from app.api import (
     documentos,
     horarios,
     importaciones,
+    local,
     periodos,
     sistema,
 )
@@ -38,6 +39,7 @@ app.include_router(sistema.router)
 app.add_middleware(LimiteArchivoMiddleware)
 app.include_router(documentos.router)
 app.include_router(auth.router)
+app.include_router(local.router)
 app.include_router(asistencia_hora.router)
 app.include_router(consultas.router)
 app.include_router(catalogos.docentes)

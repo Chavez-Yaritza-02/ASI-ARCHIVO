@@ -98,6 +98,7 @@ QLabel#franja_servidor[tipo="demostracion"] { background: #9a3412; }
 QLabel#franja_servidor[tipo="revision"] { background: #6d28d9; }
 QLabel#franja_servidor[tipo="desarrollo"] { background: #1e40af; }
 QLabel#franja_servidor[tipo="desconocido"] { background: #374151; }
+QLabel#franja_servidor[tipo="local"] { background: #0f766e; }
 
 /* --- Barra superior y menú lateral --- */
 QWidget#barra_superior { background: $superficie; border-bottom: 1px solid $borde; }
@@ -144,6 +145,9 @@ QPushButton#primario:hover { background: $acento_hover; border-color: $acento_ho
 QPushButton#primario:focus { border: 2px solid $foco; }
 QPushButton#primario:disabled { background: $borde; color: $texto_suave; border-color: $borde; }
 QPushButton#peligro { color: $error; border-color: $error; }
+QPushButton#enlace {
+    background: transparent; border: none; color: $acento; text-decoration: underline;
+}
 QPushButton#peligro:hover { background: $error_suave; }
 QPushButton#acceso {
     text-align: left; padding: 14px 16px; font-size: 15px; font-weight: 600;

@@ -14,6 +14,7 @@ PostgreSQL sigue usando sus migraciones de Alembic; nada de esto se aplica a él
 from sqlalchemy import Engine, event, select, text
 
 from app.db.datos_iniciales import cargar_datos_iniciales
+from app.local.modelos import METADATOS_LOCALES
 from app.models import Base
 
 # Última migración de PostgreSQL a la que equivale el esquema creado desde los modelos.
@@ -109,6 +110,7 @@ def crear_esquema(engine: Engine) -> None:
         if set(existentes) & set(Base.metadata.tables):
             raise RuntimeError("La base local ya existe: no se vuelve a crear")
         Base.metadata.create_all(conexion)
+        METADATOS_LOCALES.create_all(conexion)
         crear_triggers(conexion)
         cargar_datos_iniciales(conexion)
         # El esquema creado equivale a la última migración de PostgreSQL; se registra igual
@@ -127,3 +129,51 @@ def triggers_presentes(conexion) -> set[str]:
             select(text("name")).select_from(text("sqlite_master")).where(text("type='trigger'"))
         ).scalars()
     )
+
+
+class BaseLocalIncompatible(RuntimeError):
+    """La base local existe pero no es de esta versión o le faltan protecciones."""
+
+
+def preparar_base_local(engine: Engine) -> bool:
+    """Al abrir la aplicación local: crea la base si no existe; si existe, la verifica.
+
+    Devuelve True si se creó. Nunca borra ni recrea una base con datos: si algo no
+    coincide, se detiene con un mensaje para el administrador.
+    """
+    with engine.connect() as conexion:
+        tablas = set(
+            conexion.execute(text("SELECT name FROM sqlite_master WHERE type = 'table'")).scalars()
+        )
+    if not tablas:
+        crear_esquema(engine)
+        return True
+    faltan = set(Base.metadata.tables) - tablas
+    if faltan or "alembic_version" not in tablas:
+        raise BaseLocalIncompatible("La base local está incompleta; no se modificó")
+    with motor_de_escritura(engine).begin() as conexion:
+        version = conexion.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+        if version != [VERSION_ESQUEMA]:
+            raise BaseLocalIncompatible(
+                f"La base local es de otra versión ({', '.join(version) or 'sin versión'}); "
+                "no se modificó"
+            )
+        if set(TRIGGERS) - triggers_presentes(conexion):
+            raise BaseLocalIncompatible("A la base local le faltan protecciones; no se modificó")
+        if conexion.exec_driver_sql("PRAGMA quick_check").scalar() != "ok":
+            raise BaseLocalIncompatible("La base local está dañada; usa un respaldo")
+        # Tablas exclusivas de la aplicación local añadidas después (solo se agregan).
+        METADATOS_LOCALES.create_all(conexion)
+    return False
+
+
+def marcar_importaciones_interrumpidas(engine: Engine) -> int:
+    """El OCR corre dentro de la aplicación: si se cerró a medias, se marca como error."""
+    with motor_de_escritura(engine).begin() as conexion:
+        return conexion.execute(
+            text(
+                "UPDATE importacion SET estado = 'error', mensaje = :mensaje "
+                "WHERE estado = 'procesando'"
+            ),
+            {"mensaje": "Interrumpida: la aplicación se cerró antes de terminar el OCR"},
+        ).rowcount

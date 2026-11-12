@@ -56,19 +56,37 @@ class VistaConfiguracion(QWidget):
         fila.addStretch()
         capa_cuenta.addLayout(fila)
 
-        panel_conexion, capa_conexion = _panel("Conexión")
+        panel_seguridad, capa_seguridad = _panel("Contraseña")
+        self.boton_contrasena = QPushButton("Cambiar contraseña…")
+        self.boton_codigo = QPushButton("Generar nuevo código de recuperación…")
+        fila = QHBoxLayout()
+        fila.addWidget(self.boton_contrasena)
+        fila.addWidget(self.boton_codigo)
+        fila.addStretch()
+        capa_seguridad.addLayout(fila)
+        self.aviso_seguridad = QLabel("", objectName="exito", wordWrap=True)
+        capa_seguridad.addWidget(self.aviso_seguridad)
+        self.boton_codigo.setVisible(getattr(api, "es_local", False))
+
+        panel_conexion, capa_conexion = _panel(
+            "Datos" if getattr(api, "es_local", False) else "Conexión"
+        )
         self.servidor = QLabel(self.direccion_servidor())
         self.servidor.setWordWrap(True)
         self.estado_servidor = QLabel("", objectName="suave")
         conexion = QFormLayout()
-        conexion.addRow("Servidor", self.servidor)
+        local = getattr(api, "es_local", False)
+        conexion.addRow("Carpeta de datos" if local else "Servidor", self.servidor)
         conexion.addRow("Estado", self.estado_servidor)
         conexion.addRow("Versión de la aplicación", QLabel(VERSION))
         capa_conexion.addLayout(conexion)
         capa_conexion.addWidget(
             QLabel(
-                "Para usar otro servidor: cierra sesión y, en la ventana de inicio de sesión, "
-                "elige «Cambiar servidor». Pide la dirección al administrador.",
+                "La aplicación trabaja sola en esta computadora: base SQLite en la carpeta "
+                "indicada, sin servidor ni internet."
+                if local
+                else "Para usar otro servidor: cierra sesión y, en la ventana de inicio de "
+                "sesión, elige «Cambiar servidor». Pide la dirección al administrador.",
                 objectName="ayuda",
                 wordWrap=True,
             )
@@ -108,7 +126,7 @@ class VistaConfiguracion(QWidget):
 
         izquierda = QVBoxLayout()
         izquierda.setSpacing(14)
-        for p in (panel_cuenta, panel_conexion, panel_apariencia):
+        for p in (panel_cuenta, panel_seguridad, panel_conexion, panel_apariencia):
             izquierda.addWidget(p)
         izquierda.addStretch()
         derecha = QVBoxLayout()
@@ -125,9 +143,27 @@ class VistaConfiguracion(QWidget):
         self.boton_tema.clicked.connect(self._tema)
         self.boton_salir.clicked.connect(self._salir)
         self.boton_probar.clicked.connect(self.probar_conexion)
+        self.boton_contrasena.clicked.connect(self.cambiar_contrasena)
+        self.boton_codigo.clicked.connect(self.renovar_codigo)
         self.probar_conexion()
 
+    def cambiar_contrasena(self) -> None:
+        from asi_cliente.views.cuenta_local import DialogoCambiarContrasena
+
+        if DialogoCambiarContrasena(self.api, self).exec():
+            self.aviso_seguridad.setText(
+                "Contraseña cambiada. Las demás sesiones abiertas se cerraron."
+            )
+
+    def renovar_codigo(self) -> None:
+        from asi_cliente.views.cuenta_local import DialogoRenovarCodigo
+
+        if DialogoRenovarCodigo(self.api, self).exec():
+            self.aviso_seguridad.setText("Código nuevo generado; el anterior ya no sirve.")
+
     def direccion_servidor(self) -> str:
+        if getattr(self.api, "es_local", False):
+            return str(self.api.carpeta_local)
         http = getattr(self.api, "_http", None)
         return str(getattr(http, "base_url", "")) or "No configurado"
 
@@ -136,7 +172,11 @@ class VistaConfiguracion(QWidget):
             estado = self.api.get("/sistema/estado")
         except ErrorApi:
             self.estado_servidor.setObjectName("error")
-            self.estado_servidor.setText("Sin conexión con el servidor")
+            self.estado_servidor.setText(
+                "La base local no responde"
+                if getattr(self.api, "es_local", False)
+                else "Sin conexión con el servidor"
+            )
             ok = False
         else:
             ok = estado.get("base_de_datos", estado.get("estado")) == "ok"

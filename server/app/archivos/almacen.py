@@ -189,7 +189,8 @@ def validar(contenido, nombre, mime):
 def _antivirus(ruta):
     cfg = obtener_configuracion()
     if not cfg.archivo_antivirus_cmd:
-        if cfg.archivo_requerir_antivirus or cfg.entorno not in ("pruebas", "desarrollo"):
+        # «local» sin antivirus obligatorio solo en desarrollo; el instalador lo exige.
+        if cfg.archivo_requerir_antivirus or cfg.entorno not in ("pruebas", "desarrollo", "local"):
             raise ErrorNegocio("Configura el antivirus local antes de cargar documentos", 503)
         return
     comando = cfg.archivo_antivirus_cmd

@@ -61,16 +61,19 @@ TABLAS_DE_PRUEBA = (
 
 
 def pytest_collection_modifyitems(config, items):
-    if MOTOR != "sqlite":
-        return
-    saltar = pytest.mark.skip(reason="Propia de PostgreSQL (Alembic, roles o privilegios)")
+    if MOTOR == "sqlite":
+        marca, motivo = "solo_postgresql", "Propia de PostgreSQL (Alembic, roles o privilegios)"
+    else:
+        marca, motivo = "solo_sqlite", "Propia de la aplicación local (SQLite)"
+    saltar = pytest.mark.skip(reason=motivo)
     for item in items:
-        if "solo_postgresql" in item.keywords:
+        if marca in item.keywords:
             item.add_marker(saltar)
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "solo_postgresql: prueba propia de PostgreSQL")
+    config.addinivalue_line("markers", "solo_sqlite: prueba propia de la aplicación local")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -109,6 +112,7 @@ def limpiar_datos(base_de_datos):
             for tabla in reversed(Base.metadata.sorted_tables):
                 if tabla.name in vaciar:
                     conexion.execute(tabla.delete())
+            conexion.execute(text("DELETE FROM cuenta_recuperacion"))
             crear_triggers(conexion)
             conexion.execute(text("UPDATE configuracion_asistencia SET tolerancia_minutos = 10"))
         return

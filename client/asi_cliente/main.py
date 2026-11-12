@@ -1,6 +1,8 @@
 """Arranque de la aplicación de escritorio.
 
-Ejecutar en desarrollo:  uv run asi-archivo
+Ejecutar en desarrollo:
+    uv run asi-archivo            conectada a un servidor (como hasta ahora)
+    uv run asi-archivo --local    sola en esta computadora: SQLite, sin servidor ni internet
 """
 
 import os
@@ -17,9 +19,11 @@ from asi_cliente.views.ventana_principal import VentanaPrincipal
 
 
 class Aplicacion:
-    def __init__(self, app: QApplication, api: ClienteApi):
+    def __init__(self, app: QApplication, api: ClienteApi, usuario_local: str | None = None):
         self.app = app
         self.api = api
+        # Modo local: la cuenta única de esta computadora (no se mezcla con el servidor).
+        self.usuario_local = usuario_local
         # Preferencias locales (no son datos institucionales): tema y último correo.
         self.preferencias = QSettings("TecMM-Zapopan", "ASI-ARCHIVO")
         self.ventana: VentanaPrincipal | None = None
@@ -33,8 +37,13 @@ class Aplicacion:
         actual = self.preferencias.value("tema", "claro")
         self.aplicar_tema("oscuro" if actual == "claro" else "claro")
 
+    def ultimo_correo(self) -> str:
+        if self.api.es_local:
+            return self.usuario_local or ""
+        return self.preferencias.value("ultimo_correo", "")
+
     def iniciar(self) -> bool:
-        correo = self.preferencias.value("ultimo_correo", "")
+        correo = self.ultimo_correo()
         usuario = self.api.usuario or (self.api.restaurar_sesion(correo) if correo else None)
         if usuario is None:
             if not self.api.servidor_disponible():
@@ -50,7 +59,10 @@ class Aplicacion:
                     return self.iniciar()
                 return False
             usuario = login.usuario
-            self.preferencias.setValue("ultimo_correo", usuario.correo)
+            if self.api.es_local:
+                self.usuario_local = usuario.correo
+            else:
+                self.preferencias.setValue("ultimo_correo", usuario.correo)
 
         self.ventana = VentanaPrincipal(usuario, self.api)
         self.ventana.cambiar_tema.connect(self.alternar_tema)
@@ -69,7 +81,7 @@ class Aplicacion:
         return True
 
     def salir_de_sesion(self) -> None:
-        self.api.cerrar_sesion(self.preferencias.value("ultimo_correo", ""))
+        self.api.cerrar_sesion(self.ultimo_correo())
         if self.ventana:
             # Se oculta (no se cierra) para que Qt no termine la app antes del nuevo login.
             self.ventana.hide()
@@ -78,9 +90,53 @@ class Aplicacion:
             self.app.quit()
 
 
+def modo_local_solicitado(argumentos: list[str]) -> bool:
+    if "--local" in argumentos:
+        return True
+    if os.environ.get("ASI_MODO_LOCAL", "").lower() in ("1", "true"):
+        return True
+    return QSettings("TecMM-Zapopan", "ASI-ARCHIVO").value("modo", "") == "local"
+
+
+def main_local(app: QApplication) -> int:
+    """Aplicación sola en esta computadora: abre o crea la base local y pide la cuenta."""
+    from asi_cliente import local
+    from asi_cliente.views.cuenta_local import DialogoPrimeraEjecucion
+
+    try:
+        abierta = local.iniciar()
+    except local.ErrorLocal as error:
+        QMessageBox.critical(None, "ASI-ARCHIVO", str(error))
+        return 1
+    app.aboutToQuit.connect(abierta.cerrar)
+    if abierta.interrumpidas:
+        QMessageBox.information(
+            None,
+            "ASI-ARCHIVO",
+            f"{abierta.interrumpidas} importación(es) de horarios quedaron a medias porque la "
+            "aplicación se cerró durante el OCR. Están marcadas con error; vuelve a "
+            "importarlas.",
+        )
+    estado = abierta.api.get("/local/estado")
+    usuario = estado["usuario"]
+    if not estado["configurada"]:
+        primera = DialogoPrimeraEjecucion(abierta.api)
+        if primera.exec() != QDialog.Accepted:
+            abierta.cerrar()
+            return 0
+        usuario = primera.usuario
+    aplicacion = Aplicacion(app, abierta.api, usuario_local=usuario)
+    if not aplicacion.iniciar():
+        abierta.cerrar()
+        return 0
+    return app.exec()
+
+
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("ASI-ARCHIVO")
+    if modo_local_solicitado(sys.argv):
+        sys.exit(main_local(app))
     if "--comprobar-tls" in sys.argv:
         from asi_cliente.diagnostico_tls import ejecutar
 

@@ -4,6 +4,7 @@ Los valores se leen de variables de entorno o del archivo `.env` (que nunca
 se sube a GitHub). Ver `.env.example` en la raíz del proyecto.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -25,7 +26,9 @@ class Configuracion(BaseSettings):
     instancia_aceptacion: bool = False
     # Cómo se presenta el servidor en la franja de la aplicación de escritorio.
     # Sin valor, la aplicación lo deduce de `entorno` e `instancia_aceptacion`.
-    tipo_servidor: Literal["institucional", "demostracion", "revision"] | None = None
+    tipo_servidor: Literal["institucional", "demostracion", "revision", "local"] | None = None
+    # Aplicación local: una computadora, SQLite y una sola cuenta (ver app/local).
+    modo_local: bool = False
     hosts_permitidos: list[str] = []
     archivo_raiz: Path = Path.home() / ".local" / "share" / "asi-archivo" / "documentos"
     archivo_max_mb: int = Field(default=20, ge=1, le=50)
@@ -56,4 +59,7 @@ class Configuracion(BaseSettings):
 
 @lru_cache
 def obtener_configuracion() -> Configuracion:
+    if os.environ.get("ASI_MODO_LOCAL", "").lower() in ("1", "true"):
+        # La aplicación local recibe todo de quien la arranca; nunca lee el .env del servidor.
+        return Configuracion(_env_file=None)
     return Configuracion()

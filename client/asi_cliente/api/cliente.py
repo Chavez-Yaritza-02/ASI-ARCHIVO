@@ -74,6 +74,7 @@ class ClienteApi:
         url: str | None = None,
         transporte: httpx.BaseTransport | None = None,
         http: httpx.Client | None = None,
+        servicio_llavero: str | None = None,
     ):
         """`http` permite inyectar un cliente ya configurado (las pruebas de integración
         usan el TestClient de FastAPI para hablar con la API real sin abrir un puerto)."""
@@ -94,9 +95,11 @@ class ClienteApi:
             )
         self._http = http
         origen = str(http.base_url).rstrip("/")
-        self.servicio_llavero = (
+        self.servicio_llavero = servicio_llavero or (
             f"{SERVICIO_LLAVERO}:{origen}" if origen.startswith("https://") else SERVICIO_LLAVERO
         )
+        # Carpeta de datos cuando la aplicación trabaja sola en esta computadora (modo local).
+        self.carpeta_local = None
         self._token: str | None = None
         self.usuario: UsuarioSesion | None = None
 
@@ -131,6 +134,19 @@ class ClienteApi:
         if correo:
             with suppress(KeyringError):
                 keyring.delete_password(self.servicio_llavero, correo)
+
+    @property
+    def es_local(self) -> bool:
+        return self.carpeta_local is not None
+
+    def cambiar_contrasena(self, actual: str, nueva: str) -> None:
+        """Cambia la contraseña propia; esta sesión sigue abierta y las demás se cierran."""
+        r = self._peticion("POST", "/auth/contrasena", json={"actual": actual, "nueva": nueva})
+        self._token = r.json()["access_token"]
+        if self.usuario is not None:
+            with suppress(KeyringError):
+                if keyring.get_password(self.servicio_llavero, self.usuario.correo):
+                    self._guardar_token(self.usuario.correo)
 
     def cerrar(self) -> None:
         self._token = None
