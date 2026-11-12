@@ -16,7 +16,26 @@ def _sin_red(*_args, **_kwargs):
     raise AssertionError("La aplicación local intentó usar la red")
 
 
-socket.socket.connect = _sin_red
+# Solo se permite conectar con sockets que este mismo proceso abrió: en Windows, asyncio
+# crea así su canal interno (socketpair). Cualquier otro destino —internet o un servidor de
+# esta computadora— hace fallar el escenario.
+_propios: set = set()
+_bind, _connect = socket.socket.bind, socket.socket.connect
+
+
+def _bind_registrado(self, direccion):
+    _bind(self, direccion)
+    _propios.add(self.getsockname()[:2])
+
+
+def _connect_interno(self, direccion):
+    if tuple(direccion[:2]) not in _propios:
+        _sin_red()
+    return _connect(self, direccion)
+
+
+socket.socket.bind = _bind_registrado
+socket.socket.connect = _connect_interno
 socket.socket.connect_ex = _sin_red
 socket.create_connection = _sin_red
 socket.getaddrinfo = _sin_red
