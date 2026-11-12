@@ -66,8 +66,11 @@ def validar_conexion_pruebas(conexion) -> None:
 @event.listens_for(Engine, "do_connect")
 def _antes_de_conectar(dialect, registro, argumentos, opciones):
     if en_pruebas() and dialect.name == "sqlite":
-        ruta = argumentos[0] if argumentos else opciones.get("database")
-        if not _sqlite_de_pruebas(ruta):
+        # Solo la ruta del archivo de pruebas; connect_args no puede cambiar el destino.
+        permitidos_sqlite = {"check_same_thread", "timeout", "detect_types"}
+        if len(argumentos) != 1 or set(opciones) - permitidos_sqlite:
+            raise RuntimeError("Pruebas bloqueadas: parámetros de conexión no autorizados")
+        if not _sqlite_de_pruebas(argumentos[0]):
             raise RuntimeError("Pruebas bloqueadas: archivo SQLite no autorizado")
         return
     if en_pruebas():

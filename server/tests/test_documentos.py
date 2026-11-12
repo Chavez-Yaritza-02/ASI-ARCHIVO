@@ -381,16 +381,16 @@ def test_antivirus_falla_cerrado_y_rechaza_infeccion(
     assert subir(cliente, como_admin, b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE").status_code == 422
 
 
-@pytest.mark.solo_postgresql
-def test_versiones_inmutables_y_borrado_prohibido_en_postgresql(cliente, como_admin, sesion):
+def test_versiones_inmutables_y_borrado_prohibido(cliente, como_admin, sesion):
     d = subir(cliente, como_admin).json()
     for sql in (
         "UPDATE documento_version SET numero=9",
         "DELETE FROM documento_version",
         "DELETE FROM documento",
     ):
-        with pytest.raises(DBAPIError), sesion.begin_nested():
-            sesion.execute(text(sql))
+        # Transacción propia por intento: en SQLite un SAVEPOINT fallido retiene la base.
+        with pytest.raises(DBAPIError), sesion.get_bind().begin() as conexion:
+            conexion.execute(text(sql))
     assert consulta(cliente, como_admin, d["documento_id"])["version_actual"]["numero"] == 1
 
 

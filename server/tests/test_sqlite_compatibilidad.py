@@ -5,6 +5,7 @@ suite) y otras comparan contra la base PostgreSQL de pruebas migrada con Alembic
 Datos ficticios únicamente.
 """
 
+import sqlite3
 from datetime import UTC, datetime, time, timedelta, timezone
 
 import pytest
@@ -209,6 +210,32 @@ def test_barrera_rechaza_sqlite_no_autorizado(url):
 
     with pytest.raises(RuntimeError, match="SQLite no autorizado"):
         validar_url_pruebas(url)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"database": "otra.sqlite3"}, {"uri": True}, {"factory": sqlite3.Connection}],
+)
+def test_connect_args_no_puede_cambiar_el_archivo_sqlite(tmp_path, extra):
+    """Equivalente SQLite de la barrera de connect_args/libpq de PostgreSQL."""
+    extra = {k: (str(tmp_path / v) if k == "database" else v) for k, v in extra.items()}
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'asi_archivo_pytest.sqlite3'}", connect_args=extra
+    )
+    with pytest.raises(RuntimeError, match="parámetros de conexión no autorizados"):
+        engine.connect()
+    assert not (tmp_path / "otra.sqlite3").exists()
+
+
+def test_archivo_adjunto_no_autorizado_se_detecta(local, tmp_path):
+    """Una base adjunta (ATTACH) fuera del temporal de pruebas hace fallar la validación."""
+    from app.db.proteccion_pruebas import validar_conexion_pruebas
+
+    with local.connect() as c:
+        c.exec_driver_sql(f"ATTACH DATABASE '{tmp_path / 'ajena.sqlite3'}' AS ajena")
+        with pytest.raises(RuntimeError, match="SQLite no autorizado"):
+            validar_conexion_pruebas(c)
+        c.exec_driver_sql("DETACH DATABASE ajena")
 
 
 def test_version_de_esquema_igual_a_la_ultima_migracion(local):
