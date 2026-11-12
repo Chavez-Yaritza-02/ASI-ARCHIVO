@@ -190,6 +190,69 @@ QTableWidget#cuadricula { font-size: 12px; }
 /* Horas de la cuadrícula: poco margen, para poder compactar las horas vacías. */
 QTableWidget#cuadricula QHeaderView::section:vertical { padding: 2px 8px; }
 
+/* --- Asistencia por hora: registro rápido --- */
+QFrame#fila_asistencia {
+    background: $superficie; border: 1px solid $borde; border-radius: 10px;
+    border-left: 6px solid #94a3b8;
+}
+QFrame#fila_asistencia QLabel { background: transparent; }
+QFrame#fila_asistencia[estado="asistio"] { border-left-color: #15803d; }
+QFrame#fila_asistencia[estado="retardo"] { border-left-color: #b45309; }
+QFrame#fila_asistencia[estado="falto"] { border-left-color: #b91c1c; }
+QFrame#fila_asistencia[estado="justificado"] { border-left-color: #1d4ed8; }
+QFrame#fila_asistencia[estado="parcial"] { border-left-color: #7c3aed; }
+QLabel#fila_hora { font-size: 16px; font-weight: 700; color: $texto; }
+QLabel#fila_docente { font-size: 15px; font-weight: 600; }
+QLabel#fila_detalle { color: $texto_suave; font-size: 13px; }
+QLabel#fila_instruccion { font-weight: 600; }
+QLabel#fila_aviso { font-size: 13px; }
+QLabel#fila_aviso[tipo="exito"] { color: $exito; font-weight: 600; }
+QLabel#fila_aviso[tipo="error"] { color: $error; font-weight: 600; }
+QLabel#fila_aviso[tipo="informacion"] { color: $texto_suave; }
+QFrame#fila_asistencia QLabel#chip_estado {
+    border-radius: 12px; padding: 4px 10px; font-weight: 700; font-size: 13px;
+    color: #ffffff; background: #64748b;
+}
+QFrame#fila_asistencia QLabel#chip_estado[estado="asistio"] { background: #15803d; }
+QFrame#fila_asistencia QLabel#chip_estado[estado="retardo"] { background: #b45309; }
+QFrame#fila_asistencia QLabel#chip_estado[estado="falto"] { background: #b91c1c; }
+QFrame#fila_asistencia QLabel#chip_estado[estado="justificado"] { background: #1d4ed8; }
+QFrame#fila_asistencia QLabel#chip_estado[estado="parcial"] { background: #7c3aed; }
+QFrame#fila_asistencia QLabel#chip_estado[estado="inhabil"] { background: #6b7280; }
+QPushButton#btn_asistio, QPushButton#btn_retardo, QPushButton#btn_falto,
+QPushButton#btn_justificado {
+    background: $superficie; border-width: 2px; border-style: solid; border-radius: 8px;
+    font-weight: 700; font-size: 14px; padding: 6px 14px;
+}
+QPushButton#btn_asistio { color: #15803d; border-color: #15803d; }
+QPushButton#btn_retardo { color: #b45309; border-color: #b45309; }
+QPushButton#btn_falto { color: #b91c1c; border-color: #b91c1c; }
+QPushButton#btn_justificado { color: #1d4ed8; border-color: #1d4ed8; }
+QPushButton#btn_asistio:hover { background: #dcfce7; }
+QPushButton#btn_retardo:hover { background: #fef3c7; }
+QPushButton#btn_falto:hover { background: #fee2e2; }
+QPushButton#btn_justificado:hover { background: #dbeafe; }
+QPushButton#btn_asistio:checked { background: #15803d; color: #ffffff; }
+QPushButton#btn_retardo:checked { background: #b45309; color: #ffffff; }
+QPushButton#btn_falto:checked { background: #b91c1c; color: #ffffff; }
+QPushButton#btn_justificado:checked { background: #1d4ed8; color: #ffffff; }
+QPushButton#btn_asistio:disabled, QPushButton#btn_retardo:disabled,
+QPushButton#btn_falto:disabled, QPushButton#btn_justificado:disabled {
+    color: $texto_suave; border-color: $borde; background: $fondo;
+}
+QPushButton#btn_asistio:checked:disabled { background: #15803d; color: #ffffff; }
+QPushButton#btn_retardo:checked:disabled { background: #b45309; color: #ffffff; }
+QPushButton#btn_falto:checked:disabled { background: #b91c1c; color: #ffffff; }
+QPushButton#btn_justificado:checked:disabled { background: #1d4ed8; color: #ffffff; }
+QPushButton#btn_asistio:focus, QPushButton#btn_retardo:focus, QPushButton#btn_falto:focus,
+QPushButton#btn_justificado:focus { border: 3px solid $foco; }
+QPushButton#btn_secundario { padding: 6px 10px; font-size: 13px; }
+QLabel#indicador_valor[tono="cumplidas"] { color: $exito; }
+QLabel#indicador_valor[tono="retardo"] { color: #b45309; }
+QLabel#indicador_valor[tono="falto"] { color: $error; }
+QLabel#indicador_valor[tono="pendiente"] { color: $texto_suave; }
+QWidget#lista_asistencia { background: transparent; }
+
 /* --- Pestañas (subsecciones) --- */
 QTabWidget::pane { border: none; border-top: 1px solid $borde; padding-top: 12px; }
 QTabWidget#subsecciones::pane { padding-top: 16px; }

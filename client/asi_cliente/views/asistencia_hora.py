@@ -1,8 +1,15 @@
-"""Captura independiente por hora, parciales, historial y reportes."""
+"""Asistencia por hora: registro rápido (cuatro botones por fila) y vista detallada.
+
+- «Registro rápido»: resumen del día, filtros a la vista y una fila por hora programada
+  con Asistió / Retardo / Falta / Justificado (ver asistencia_rapida.py).
+- «Vista detallada»: la tabla anterior, con parciales, captura por lote, historial,
+  documentos y reportes del día o de un rango. Ambas usan la misma API y auditoría.
+"""
 
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt, QTime
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -15,8 +22,10 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QTimeEdit,
@@ -26,8 +35,16 @@ from PySide6.QtWidgets import (
 
 from asi_cliente.api.cliente import ErrorApi
 from asi_cliente.views.asistencia_lote import DialogoCapturaLote
+from asi_cliente.views.asistencia_rapida import FilaRapida, Tarjeta, horas_texto, normal
 from asi_cliente.views.bitacora import DialogoHistorial
-from asi_cliente.views.comunes import Columna, Desplegable, Tabla, encabezado, mostrar_error
+from asi_cliente.views.comunes import (
+    Columna,
+    Desplegable,
+    Tabla,
+    confirmar,
+    encabezado,
+    mostrar_error,
+)
 
 NOMBRES = {
     "pendiente": "Pendiente de verificar",
@@ -193,9 +210,52 @@ class VistaAsistenciaHora(QWidget):
         self.estado.addItem("Todos los estados", None)
         for k, v in NOMBRES.items():
             self.estado.addItem(v, k)
-        self.boton_consultar = QPushButton("Consultar horas")
-        self.aviso = QLabel("", wordWrap=True)
-        self.resumen = QLabel("", wordWrap=True)
+        self.boton_consultar = QPushButton("Actualizar")
+        self.boton_consultar.setToolTip("Volver a consultar las horas de la fecha (F5)")
+        self.aviso = QLabel("", objectName="suave", wordWrap=True)
+        self.resumen = QLabel("", objectName="suave", wordWrap=True)
+        # Filtros de pantalla (al instante, sin consultar de nuevo al servidor).
+        self.buscar = QLineEdit(placeholderText="Buscar docente, materia o aula…")
+        self.buscar.setClearButtonEnabled(True)
+        self.buscar.setMinimumWidth(240)
+        self.carrera = QComboBox()
+        self.grupo = QComboBox()
+        self.aula = QComboBox()
+        for combo, texto in (
+            (self.carrera, "Todas las carreras"),
+            (self.grupo, "Todos los grupos"),
+            (self.aula, "Todas las aulas"),
+        ):
+            combo.addItem(texto, None)
+            combo.setMinimumContentsLength(10)
+        self.boton_limpiar = QPushButton("Limpiar filtros")
+        self.anterior = QPushButton("◀")
+        self.anterior.setToolTip("Día anterior")
+        self.siguiente = QPushButton("▶")
+        self.siguiente.setToolTip("Día siguiente")
+        self.boton_hoy = QPushButton("Hoy")
+        self.tarjetas = {
+            clave: Tarjeta(titulo, clave)
+            for clave, titulo in (
+                ("programadas", "Horas programadas"),
+                ("cumplidas", "Horas cumplidas"),
+                ("retardo", "Retardos"),
+                ("falto", "Faltas"),
+                ("pendiente", "Pendientes por registrar"),
+            )
+        }
+        self.filas_rapidas: list[FilaRapida] = []
+        self.contenedor = QWidget(objectName="lista_asistencia")
+        self.capa_filas = QVBoxLayout(self.contenedor)
+        self.capa_filas.setContentsMargins(0, 0, 4, 0)
+        self.capa_filas.setSpacing(8)
+        self.vacio = QLabel("", objectName="vacio", wordWrap=True)
+        self.vacio.setAlignment(Qt.AlignCenter)
+        self.lista = QScrollArea()
+        self.lista.setWidgetResizable(True)
+        self.lista.setWidget(self.contenedor)
+        self.lista.setFrameShape(QScrollArea.NoFrame)
+        self._fecha_cargada = None
         columnas = [
             Columna("Docente", lambda f: f["docente_nombre"]),
             Columna("Hora", lambda f: f"{f['programado_inicio'][:5]}–{f['programado_fin'][:5]}"),
@@ -237,27 +297,57 @@ class VistaAsistenciaHora(QWidget):
         capa.addWidget(
             encabezado(
                 "Asistencia por hora de clase",
-                "Cada fila se registra independientemente. "
-                "Una captura por turno no acredita horas.",
+                "Registra cada hora con un clic. Una hora sin registrar queda pendiente; "
+                "nada se marca solo.",
             )
         )
+        # Fecha y búsqueda.
         barra = QHBoxLayout()
-        for w in (QLabel("Fecha"), self.fecha, QLabel("Docente"), self.docente):
+        for w in (QLabel("Fecha"), self.anterior, self.fecha, self.siguiente, self.boton_hoy):
             barra.addWidget(w)
+        barra.addSpacing(12)
+        barra.addWidget(self.buscar, 1)
         barra.addWidget(self.boton_consultar)
-        barra.addStretch()
         capa.addLayout(barra)
-        mas = QWidget()
-        fila_mas = QHBoxLayout(mas)
-        fila_mas.setContentsMargins(0, 0, 0, 0)
-        for w in (self.turno, self.tipo, self.estado):
-            fila_mas.addWidget(w)
-        fila_mas.addStretch()
-        self.mas_filtros = Desplegable("Más filtros (turno, tipo y estado)", mas)
-        capa.addWidget(self.mas_filtros)
+        # Filtros siempre visibles.
+        filtros = QHBoxLayout()
+        for w in (
+            self.turno,
+            self.carrera,
+            self.grupo,
+            self.aula,
+            self.estado,
+            self.tipo,
+            self.boton_limpiar,
+        ):
+            filtros.addWidget(w)
+        filtros.addStretch()
+        capa.addLayout(filtros)
+        # Resumen del día.
+        tarjetas = QHBoxLayout()
+        for t in self.tarjetas.values():
+            tarjetas.addWidget(t)
+        capa.addLayout(tarjetas)
         capa.addWidget(self.aviso)
-        capa.addWidget(self.resumen)
-        capa.addWidget(self.pestanas, 1)
+
+        # Modo rápido: una fila por hora.
+        rapido = QWidget()
+        capa_rapido = QVBoxLayout(rapido)
+        capa_rapido.setContentsMargins(0, 0, 0, 0)
+        capa_rapido.addWidget(self.vacio)
+        capa_rapido.addWidget(self.lista, 1)
+
+        # Modo detallado: la tabla anterior con todas sus acciones.
+        detallado = QWidget()
+        capa_det = QVBoxLayout(detallado)
+        capa_det.setContentsMargins(0, 0, 0, 0)
+        fila_docente = QHBoxLayout()
+        fila_docente.addWidget(QLabel("Docente"))
+        fila_docente.addWidget(self.docente)
+        fila_docente.addStretch()
+        capa_det.addLayout(fila_docente)
+        capa_det.addWidget(self.resumen)
+        capa_det.addWidget(self.pestanas, 1)
         acciones = QHBoxLayout()
         for b in (
             self.boton_registrar,
@@ -268,7 +358,7 @@ class VistaAsistenciaHora(QWidget):
             self.boton_excel,
         ):
             acciones.addWidget(b)
-        capa.addLayout(acciones)
+        capa_det.addLayout(acciones)
         caja_rango = QWidget()
         rango = QHBoxLayout(caja_rango)
         rango.setContentsMargins(0, 0, 0, 0)
@@ -284,7 +374,22 @@ class VistaAsistenciaHora(QWidget):
         rango.addStretch()
         self.reporte_rango = Desplegable("Reporte de varios días", caja_rango)
         self.reporte_rango.setVisible(usuario.puede("reportes.generar"))
-        capa.addWidget(self.reporte_rango)
+        capa_det.addWidget(self.reporte_rango)
+
+        self.modos = QTabWidget(objectName="modos_asistencia")
+        self.modos.setDocumentMode(True)
+        self.modos.addTab(rapido, "Registro rápido")
+        self.modos.addTab(detallado, "Vista detallada (parciales, lote y reportes)")
+        capa.addWidget(self.modos, 1)
+
+        self.anterior.clicked.connect(lambda: self.fecha.setDate(self.fecha.date().addDays(-1)))
+        self.siguiente.clicked.connect(lambda: self.fecha.setDate(self.fecha.date().addDays(1)))
+        self.boton_hoy.clicked.connect(lambda: self.fecha.setDate(QDate.currentDate()))
+        self.buscar.textChanged.connect(self.aplicar_filtros)
+        for combo in (self.carrera, self.grupo, self.aula):
+            combo.currentIndexChanged.connect(self.aplicar_filtros)
+        self.boton_limpiar.clicked.connect(self.limpiar_filtros)
+        QShortcut(QKeySequence("F5"), self, activated=self.cargar)
         self.boton_consultar.clicked.connect(self.cargar)
         self.fecha.dateChanged.connect(self.cargar)
         self.boton_registrar.clicked.connect(self.registrar)
@@ -312,7 +417,29 @@ class VistaAsistenciaHora(QWidget):
     def seleccionada(self):
         return self.pestanas.currentWidget().seleccionado()
 
+    # --- cambios sin guardar -----------------------------------------------------------
+
+    @property
+    def cambios_pendientes(self) -> bool:
+        """Datos escritos en una fila que aún no se guardan (motivo, hora, observación)."""
+        return any(f.tiene_cambios() for f in self.filas_rapidas)
+
+    def cambio_en_filas(self) -> None:
+        pass  # la ventana principal consulta `cambios_pendientes` al cerrar
+
     def cargar(self, *_):
+        fecha = self.fecha.date()
+        descartar = self._fecha_cargada is not None and self.cambios_pendientes
+        if descartar and not confirmar(
+            self,
+            "Hay datos escritos que aún no se guardan.",
+            "Si continúas se descartan. ¿Continuar?",
+        ):
+            self.fecha.blockSignals(True)
+            self.fecha.setDate(self._fecha_cargada)
+            self.fecha.blockSignals(False)
+            return
+        self._fecha_cargada = fecha
         self.datos = None
         self.tabla.cargar([])
         self.historicos.cargar([])
@@ -327,6 +454,8 @@ class VistaAsistenciaHora(QWidget):
             self.botones()
             return
         self.datos = datos
+        self._llenar_filtros(datos["filas"])
+        self._construir_filas(datos["filas"])
         self.tabla.cargar(datos["filas"])
         self.historicos.cargar(datos["registros_fuera_de_programacion"])
         if self.docente.currentData() is None:
@@ -361,7 +490,114 @@ class VistaAsistenciaHora(QWidget):
                 "revisa el historial."
             )
         self.aviso.setText(aviso)
+        self.aplicar_filtros()
         self.botones()
+
+    # --- registro rápido ---------------------------------------------------------------
+
+    def _llenar_filtros(self, filas):
+        valores = {
+            self.carrera: sorted({f.get("carrera") for f in filas if f.get("carrera")}),
+            self.grupo: sorted({f["grupo"] for f in filas if f.get("grupo")}),
+            self.aula: sorted({f["aula"] for f in filas if f.get("aula")}),
+        }
+        for combo, opciones in valores.items():
+            actual = combo.currentData()
+            combo.blockSignals(True)
+            while combo.count() > 1:
+                combo.removeItem(1)
+            for v in opciones:
+                combo.addItem(v, v)
+            combo.setCurrentIndex(max(combo.findData(actual), 0))
+            combo.blockSignals(False)
+
+    def _construir_filas(self, filas):
+        for fila in self.filas_rapidas:
+            fila.setParent(None)
+            fila.deleteLater()
+        self.filas_rapidas = []
+        while self.capa_filas.count():
+            self.capa_filas.takeAt(0)
+        for f in filas:  # ya vienen ordenadas por hora y docente
+            fila = FilaRapida(f, self)
+            self.filas_rapidas.append(fila)
+            self.capa_filas.addWidget(fila)
+        self.capa_filas.addStretch()
+
+    def _visible(self, f) -> bool:
+        texto = normal(self.buscar.text())
+        campos = ("docente_nombre", "asignatura", "aula")
+        donde = normal(" ".join(str(f.get(c) or "") for c in campos))
+        return (
+            (not texto or texto in donde)
+            and self.carrera.currentData() in (None, f.get("carrera"))
+            and self.grupo.currentData() in (None, f.get("grupo"))
+            and self.aula.currentData() in (None, f.get("aula"))
+        )
+
+    def filas_visibles(self) -> list[dict]:
+        return [f.fila for f in self.filas_rapidas if not f.isHidden()]
+
+    def aplicar_filtros(self, *_):
+        for fila in self.filas_rapidas:
+            fila.setVisible(self._visible(fila.fila))
+        visibles = self.filas_visibles()
+        if self.datos is None:
+            self.vacio.setText("No se pudo consultar la información de esta fecha.")
+        elif not self.filas_rapidas:
+            self.vacio.setText(
+                "No hay horas programadas en esta fecha. Cambia la fecha o revisa los filtros."
+            )
+        elif not visibles:
+            self.vacio.setText("Ninguna hora coincide con la búsqueda o los filtros.")
+        self.vacio.setVisible(not visibles)
+        self.lista.setVisible(bool(visibles))
+        self.tabla.cargar([f for f in (self.datos or {}).get("filas", []) if self._visible(f)])
+        self.actualizar_resumen()
+
+    def limpiar_filtros(self):
+        for combo in (self.carrera, self.grupo, self.aula, self.turno, self.estado, self.tipo):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        self.buscar.clear()
+        self.cargar()
+
+    def actualizar_resumen(self):
+        filas = self.filas_visibles() if self.filas_rapidas else []
+        programadas = sum(f["minutos"]["programadas"] for f in filas)
+        cumplidas = sum(f["minutos"]["cumplidas"] for f in filas)
+        estados = ("retardo", "falto", "pendiente")
+        cuenta = {e: sum(1 for f in filas if f["estado"] == e) for e in estados}
+        self.tarjetas["programadas"].poner(horas_texto(programadas))
+        self.tarjetas["cumplidas"].poner(horas_texto(cumplidas))
+        for clave in ("retardo", "falto", "pendiente"):
+            self.tarjetas[clave].poner(str(cuenta[clave]))
+
+    def fila_guardada(self, _fila):
+        """Una fila se guardó: actualizar resumen y la vista detallada sin recargar el día."""
+        if self.datos is not None:
+            self.datos["totales"] = None  # los totales del servidor ya no corresponden
+        self.tabla.cargar([f for f in (self.datos or {}).get("filas", []) if self._visible(f)])
+        self.actualizar_resumen()
+        self.botones()
+
+    def abrir_documentos_de(self, f):
+        if not f.get("asistencia") or not self.usuario.puede("documentos.ver"):
+            return
+        from asi_cliente.views.documentos import DialogoDocumentosHora
+
+        DialogoDocumentosHora(self.api, self.usuario, f["asistencia"], self).exec()
+
+    def mas_opciones(self, f):
+        menu = QMenu(self)
+        if self.usuario.puede("asistencia.registrar"):
+            menu.addAction(
+                "Asistencia parcial, minutos u otra excepción…", lambda: self.registrar(f)
+            )
+        historial = menu.addAction("Historial de cambios de esta hora", lambda: self.historial(f))
+        historial.setEnabled(bool(f.get("asistencia")))
+        menu.exec(self.cursor().pos())
 
     def botones(self, *_):
         f = self.seleccionada()
@@ -381,8 +617,8 @@ class VistaAsistenciaHora(QWidget):
         for b in (self.boton_pdf, self.boton_excel):
             b.setEnabled(self.datos is not None)
 
-    def registrar(self):
-        f = self.seleccionada()
+    def registrar(self, f=None):
+        f = f or self.seleccionada()
         if not f or not self.usuario.puede("asistencia.registrar"):
             return
         dialogo = DialogoAsistenciaHora(f, self)
@@ -442,8 +678,8 @@ class VistaAsistenciaHora(QWidget):
 
         DialogoDocumentosHora(self.api, self.usuario, f["asistencia"], self).exec()
 
-    def historial(self):
-        f = self.seleccionada()
+    def historial(self, f=None):
+        f = f or self.seleccionada()
         if not f or not f["asistencia"]:
             return
         try:

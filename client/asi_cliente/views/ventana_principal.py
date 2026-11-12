@@ -407,6 +407,7 @@ class VentanaPrincipal(QMainWindow):
         nombres = {
             "VistaImportacion": "Importar horarios: revisión de una página",
             "VistaHorarios": "Horarios: borrador en edición",
+            "VistaAsistenciaHora": "Asistencia por hora: datos escritos sin guardar",
         }
         return sorted(
             {
