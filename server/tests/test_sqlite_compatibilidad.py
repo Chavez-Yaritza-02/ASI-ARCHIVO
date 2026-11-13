@@ -251,3 +251,57 @@ def test_version_de_esquema_igual_a_la_ultima_migracion(local):
         assert c.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == [
             cabeza
         ]
+
+
+# --- actualización aditiva de una base local anterior (e6a001 -> i7a001) -----------------
+
+
+def _como_base_anterior(motor, dejar=()):
+    """Deja la base como la creó la etapa 3 (sin las tablas de incidencias desde Excel)."""
+    with motor.begin() as c:
+        for tabla in ("incidencia_importada", "importacion_incidencias"):
+            if tabla not in dejar:
+                c.exec_driver_sql(f"DROP TABLE {tabla}")
+        c.exec_driver_sql("UPDATE alembic_version SET version_num = 'e6a001'")
+        c.exec_driver_sql(
+            "INSERT INTO docente (nombre, nombre_normalizado, activo) "
+            "VALUES ('DOCENTE FICTICIO PREVIO', 'DOCENTE FICTICIO PREVIO', 1)"
+        )
+
+
+def _version(motor):
+    with motor.connect() as c:
+        return c.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+
+
+def test_base_local_anterior_solo_agrega_las_tablas_nuevas(local):
+    _como_base_anterior(local)
+    assert sqlite_local.preparar_base_local(local) is False
+    assert _version(local) == [sqlite_local.VERSION_ESQUEMA] == ["i7a001"]
+    with local.connect() as c:
+        tablas = set(c.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).scalars())
+        assert set(Base.metadata.tables) <= tablas
+        # Los datos que ya existían siguen intactos y las protecciones también.
+        assert c.execute(text("SELECT nombre FROM docente")).scalars().all() == [
+            "DOCENTE FICTICIO PREVIO"
+        ]
+        assert sqlite_local.triggers_presentes(c) == set(sqlite_local.TRIGGERS)
+        assert c.exec_driver_sql("PRAGMA integrity_check").scalar() == "ok"
+    # Abrir otra vez no cambia nada.
+    assert sqlite_local.preparar_base_local(local) is False
+    assert _version(local) == ["i7a001"]
+
+
+def test_base_anterior_inconsistente_no_se_modifica(local):
+    _como_base_anterior(local, dejar=("importacion_incidencias",))
+    with pytest.raises(sqlite_local.BaseLocalIncompatible, match="incompleta"):
+        sqlite_local.preparar_base_local(local)
+    assert _version(local) == ["e6a001"]
+
+
+def test_base_de_version_desconocida_no_se_modifica(local):
+    with local.begin() as c:
+        c.exec_driver_sql("UPDATE alembic_version SET version_num = 'zz9999'")
+    with pytest.raises(sqlite_local.BaseLocalIncompatible, match="otra versión"):
+        sqlite_local.preparar_base_local(local)
+    assert _version(local) == ["zz9999"]

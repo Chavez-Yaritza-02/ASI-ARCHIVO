@@ -116,6 +116,17 @@ def confirmar(
     return caja.exec() == QMessageBox.Yes
 
 
+def informar(padre: QWidget | None, titulo: str, detalle: str = "") -> None:
+    """Aviso informativo (sin decisión que tomar)."""
+    caja = QMessageBox(padre)
+    caja.setIcon(QMessageBox.Information)
+    caja.setWindowTitle(titulo)
+    caja.setText(titulo)
+    if detalle:
+        caja.setInformativeText(detalle)
+    caja.exec()
+
+
 def encabezado(titulo: str, subtitulo: str = "") -> QWidget:
     caja = QWidget()
     capa = QVBoxLayout(caja)

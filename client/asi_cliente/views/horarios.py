@@ -3,8 +3,13 @@
 Flujo:
 1. Elegir periodo y docente: se listan todas sus versiones (historial).
 2. "Nueva versión" crea un borrador (copia de la vigente, si existe).
-3. En el borrador se editan las celdas (doble clic) y se guarda.
+3. En el borrador se agregan, corrigen o eliminan clases (botones o doble clic en la
+   cuadrícula) y se guarda. Las horas ocupadas y las clases repetidas se avisan antes.
 4. Un administrador lo confirma como vigente; la versión anterior pasa a histórico.
+
+La captura manual y la importación por OCR trabajan sobre las mismas versiones: ninguna
+crea un horario aparte. Cada semestre es otro periodo con sus propias versiones; la
+asistencia ya registrada conserva su copia del horario que regía ese día.
 """
 
 import hashlib
@@ -27,6 +32,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -51,6 +57,7 @@ from asi_cliente.views.comunes import (
     Tabla,
     confirmar,
     encabezado,
+    informar,
     mostrar_error,
 )
 
@@ -139,12 +146,127 @@ class DialogoCelda(QDialog):
         return Celda(self.asignatura.currentData(), grupo, self.aula.currentData())
 
 
+def _hora_texto(hora: int) -> str:
+    return f"{hora:02d}:00"
+
+
+class DialogoClase(QDialog):
+    """Agregar o corregir una clase: día, hora de inicio y de fin, materia, grupo y aula."""
+
+    def __init__(self, catalogos: dict, clase: dict | None = None, padre=None):
+        super().__init__(padre)
+        self.setWindowTitle("Corregir clase" if clase else "Agregar clase")
+        self.setMinimumWidth(420)
+        self.catalogos = catalogos
+        self.dia = QComboBox()
+        for dia, titulo in zip(DIAS, TITULOS_DIAS, strict=True):
+            self.dia.addItem(titulo, dia)
+        self.inicio, self.fin = QComboBox(), QComboBox()
+        for h in HORAS:
+            self.inicio.addItem(_hora_texto(h), h)
+            self.fin.addItem(_hora_texto(h + 1), h + 1)
+        self.asignatura = DialogoCelda._combo(catalogos["asignaturas"], "nombre", opcional=False)
+        self.grupo = DialogoCelda._combo(catalogos["grupos"], "clave", opcional=True)
+        self.aula = DialogoCelda._combo(catalogos["aulas"], "clave", opcional=True)
+        celda = clase["celda"] if clase else None
+        if celda and celda.grupo_letra:
+            self.grupo.insertItem(
+                1,
+                f"Letra «{celda.grupo_letra}» (pendiente de validar)",
+                f"letra:{celda.grupo_letra}",
+            )
+        if clase:
+            self.dia.setCurrentIndex(DIAS.index(clase["dia"]))
+            self.inicio.setCurrentIndex(self.inicio.findData(clase["inicio"]))
+            self.fin.setCurrentIndex(self.fin.findData(clase["fin"]))
+            grupo = celda.grupo_id or (f"letra:{celda.grupo_letra}" if celda.grupo_letra else None)
+            for combo, valor in (
+                (self.asignatura, celda.asignatura_id),
+                (self.grupo, grupo),
+                (self.aula, celda.aula_id),
+            ):
+                combo.setCurrentIndex(max(combo.findData(valor), 0))
+        else:
+            self.fin.setCurrentIndex(1)
+        self.inicio.currentIndexChanged.connect(self._ajustar_fin)
+        formulario = QFormLayout()
+        formulario.addRow("Día", self.dia)
+        formulario.addRow("Hora de inicio", self.inicio)
+        formulario.addRow("Hora de fin", self.fin)
+        formulario.addRow("Asignatura / actividad", self.asignatura)
+        formulario.addRow("Grupo", self.grupo)
+        formulario.addRow("Aula", self.aula)
+        self.mensaje = QLabel("", objectName="error", wordWrap=True)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.button(QDialogButtonBox.Ok).setText("Aplicar")
+        botones.button(QDialogButtonBox.Cancel).setText("Cancelar")
+        botones.accepted.connect(self._aceptar)
+        botones.rejected.connect(self.reject)
+        capa = QVBoxLayout(self)
+        capa.addLayout(formulario)
+        capa.addWidget(
+            QLabel(
+                "Los cambios se aplican al borrador; usa «Guardar cambios» para guardarlos.",
+                objectName="ayuda",
+                wordWrap=True,
+            )
+        )
+        capa.addWidget(self.mensaje)
+        capa.addWidget(botones)
+
+    def _ajustar_fin(self) -> None:
+        if self.fin.currentData() <= self.inicio.currentData():
+            self.fin.setCurrentIndex(self.fin.findData(self.inicio.currentData() + 1))
+
+    def clase(self) -> dict | None:
+        asignatura = self.asignatura.currentData()
+        if asignatura is None:
+            return None
+        grupo = self.grupo.currentData()
+        if isinstance(grupo, str) and grupo.startswith("letra:"):
+            celda = Celda(asignatura, None, self.aula.currentData(), grupo.removeprefix("letra:"))
+        else:
+            celda = Celda(asignatura, grupo, self.aula.currentData())
+        return {
+            "dia": self.dia.currentData(),
+            "inicio": self.inicio.currentData(),
+            "fin": self.fin.currentData(),
+            "celda": celda,
+        }
+
+    def problema(self) -> str:
+        clase = self.clase()
+        if clase is None:
+            return "Elige la asignatura o actividad."
+        if clase["fin"] <= clase["inicio"]:
+            return "La hora de fin debe ser posterior a la de inicio."
+        tipo = next(
+            (
+                a.get("tipo")
+                for a in self.catalogos["asignaturas"]
+                if a["id"] == clase["celda"].asignatura_id
+            ),
+            None,
+        )
+        if tipo == "materia" and not (clase["celda"].grupo_id or clase["celda"].grupo_letra):
+            return "Una materia necesita grupo."
+        return ""
+
+    def _aceptar(self) -> None:
+        problema = self.problema()
+        if problema:
+            self.mensaje.setText(problema)
+            return
+        self.accept()
+
+
 class VistaHorarios(QWidget):
     def __init__(self, api: ClienteApi, usuario: UsuarioSesion):
         super().__init__()
         self.api = api
         self.puede_editar = usuario.puede("horarios.editar")
         self.puede_confirmar = usuario.puede("horarios.confirmar")
+        self.puede_docentes = usuario.puede("docentes.editar")
         self.horario: dict | None = None
         self.celdas: dict[tuple[str, int], Celda] = {}
         self.cambios_pendientes = False
@@ -165,6 +287,10 @@ class VistaHorarios(QWidget):
         seleccion.addSpacing(16)
         seleccion.addWidget(QLabel("Docente"))
         seleccion.addWidget(self.docente, 1)
+        self.boton_docente = QPushButton("Nuevo docente…")
+        self.boton_docente.setToolTip("Agregar al catálogo un docente que todavía no existe")
+        self.boton_docente.setVisible(self.puede_docentes)
+        seleccion.addWidget(self.boton_docente)
 
         # --- versiones ---
         self.versiones = Tabla(
@@ -209,9 +335,36 @@ class VistaHorarios(QWidget):
         self.boton_descartar.setVisible(self.puede_editar)
         self.boton_confirmar.setVisible(self.puede_confirmar)
         self.ayuda_cuadricula = QLabel(
-            "Doble clic en una celda para editarla; tecla Supr para vaciarla.", objectName="ayuda"
+            "Agrega clases con su día y horas, o haz doble clic en una celda; tecla Supr "
+            "para vaciarla. Recuerda «Guardar cambios».",
+            objectName="ayuda",
+            wordWrap=True,
         )
+        self.boton_agregar = QPushButton("Agregar clase…")
+        self.boton_editar_clase = QPushButton("Editar clase…")
+        self.boton_eliminar_clase = QPushButton("Eliminar clase")
+        for b in (self.boton_agregar, self.boton_editar_clase, self.boton_eliminar_clase):
+            b.setVisible(self.puede_editar)
+        self.lista = Tabla(
+            [
+                Columna("Día", lambda b: TITULOS_DIAS[DIAS.index(b["dia"])]),
+                Columna("Inicio", lambda b: b["hora_inicio"]),
+                Columna("Fin", lambda b: b["hora_fin"]),
+                Columna("Asignatura / actividad", lambda b: b["asignatura"]),
+                Columna("Grupo", lambda b: b["grupo"]),
+                Columna("Aula", lambda b: b["aula"]),
+                Columna("Horas", lambda b: b["horas"]),
+            ],
+            "Este horario no tiene clases. Usa «Agregar clase…».",
+        )
+        self.vistas = QTabWidget()
+        self.vistas.addTab(self.cuadricula, "Semana")
+        self.vistas.addTab(self.lista, "Lista de clases")
         self.ayuda_cuadricula.setVisible(self.puede_editar)
+        acciones_clase = QHBoxLayout()
+        for b in (self.boton_agregar, self.boton_editar_clase, self.boton_eliminar_clase):
+            acciones_clase.addWidget(b)
+        acciones_clase.addStretch()
         acciones = QHBoxLayout()
         acciones.addStretch()
         for b in (
@@ -225,7 +378,8 @@ class VistaHorarios(QWidget):
         capa_c = QVBoxLayout(panel_cuadricula)
         capa_c.setContentsMargins(8, 0, 0, 0)
         capa_c.addWidget(self.estado)
-        capa_c.addWidget(self.cuadricula, 1)
+        capa_c.addWidget(self.vistas, 1)
+        capa_c.addLayout(acciones_clase)
         capa_c.addWidget(self.ayuda_cuadricula)
         capa_c.addWidget(self.advertencias)
         capa_c.addLayout(acciones)
@@ -257,6 +411,10 @@ class VistaHorarios(QWidget):
         self.boton_confirmar.clicked.connect(self.confirmar_vigente)
         self.boton_vigencia.clicked.connect(self.confirmar_fechas)
         self.cuadricula.cellDoubleClicked.connect(self.editar_celda)
+        self.boton_docente.clicked.connect(self.nuevo_docente)
+        self.boton_agregar.clicked.connect(self.agregar_clase)
+        self.boton_editar_clase.clicked.connect(self.editar_clase)
+        self.boton_eliminar_clase.clicked.connect(self.eliminar_clase)
         QShortcut(QKeySequence.Delete, self.cuadricula, self.vaciar_seleccion)
         QShortcut(QKeySequence(Qt.Key_Backspace), self.cuadricula, self.vaciar_seleccion)
 
@@ -405,6 +563,32 @@ class VistaHorarios(QWidget):
             item.setForeground(QColor("#1f2937"))
             self.cuadricula.setItem(HORAS.index(hora), DIAS.index(dia), item)
         mostrar_primera_clase(self.cuadricula, [h for _d, h in self.celdas])
+        self.lista.cargar(self._clases())
+
+    def _clases(self) -> list[dict]:
+        """Las clases del horario (bloques continuos), para la lista y para editarlas."""
+        clases = []
+        for b in celdas_a_bloques(self.celdas):
+            celda = Celda(b["asignatura_id"], b["grupo_id"], b["aula_id"], b["grupo_letra"])
+            grupo = self.nombres["grupos"].get(b["grupo_id"], {}).get("clave") or (
+                f"{b['grupo_letra']} (pendiente)" if b["grupo_letra"] else ""
+            )
+            inicio, fin = int(b["hora_inicio"][:2]), int(b["hora_fin"][:2])
+            clases.append(
+                {
+                    **b,
+                    "inicio": inicio,
+                    "fin": fin,
+                    "celda": celda,
+                    "horas": fin - inicio,
+                    "asignatura": self.nombres["asignaturas"]
+                    .get(b["asignatura_id"], {})
+                    .get("nombre", "?"),
+                    "grupo": grupo,
+                    "aula": self.nombres["aulas"].get(b["aula_id"], {}).get("clave", ""),
+                }
+            )
+        return clases
 
     def _actualizar_estado(self) -> None:
         h = self.horario
@@ -435,6 +619,10 @@ class VistaHorarios(QWidget):
                 f"color: {COLORES_ESTADO.get(h['estado'], '')}; font-weight: 600;"
             )
         editable = self._editable()
+        con_docente = bool(self._docente() and self._periodo())
+        self.boton_agregar.setEnabled(con_docente)
+        self.boton_editar_clase.setEnabled(bool(self.celdas))
+        self.boton_eliminar_clase.setEnabled(bool(self.celdas))
         self.boton_vigencia.setEnabled(bool(h and h["estado"] in ("vigente", "historico")))
         self.boton_guardar.setEnabled(editable and self.cambios_pendientes)
         self.boton_descartar.setEnabled(editable)
@@ -497,6 +685,206 @@ class VistaHorarios(QWidget):
             return True
         return False
 
+    # --- clases (captura manual) ----------------------------------------------------
+
+    def _catalogos_periodo(self) -> dict:
+        periodo = self._periodo() or {}
+        return {
+            **self.catalogos,
+            "grupos": [
+                g
+                for g in self.catalogos["grupos"]
+                if g.get("periodo_id") in (None, periodo.get("id"))
+            ],
+        }
+
+    def _asegurar_borrador(self) -> bool:
+        """Solo los borradores se editan: si se ve una versión oficial, ofrece crear otra."""
+        if self._editable():
+            return True
+        if not self.puede_editar or not self._docente() or not self._periodo():
+            return False
+        if self.horario and self.horario["estado"] == "borrador":
+            return False  # borrador de un periodo cerrado
+        if self.horario and not confirmar(
+            self,
+            "Para cambiar el horario se crea una nueva versión (borrador).",
+            "La versión actual no se modifica: queda igual hasta que confirmes la nueva. "
+            "La asistencia ya registrada conserva el horario que regía ese día.",
+            "Crear nueva versión",
+        ):
+            return False
+        self.nueva_version()
+        return self._editable()
+
+    def _clase_elegida(self) -> dict | None:
+        clases = self._clases()
+        if self.vistas.currentWidget() is self.lista:
+            fila = self.lista.seleccionado()
+            return next(
+                (
+                    c
+                    for c in clases
+                    if fila and (c["dia"], c["inicio"]) == (fila["dia"], fila["inicio"])
+                ),
+                None,
+            )
+        fila, columna = self.cuadricula.currentRow(), self.cuadricula.currentColumn()
+        if fila < 0 or columna < 0:
+            return None
+        dia, hora = DIAS[columna], HORAS[fila]
+        return next((c for c in clases if c["dia"] == dia and c["inicio"] <= hora < c["fin"]), None)
+
+    def _colocar(self, clase: dict, anterior: dict | None = None) -> bool:
+        """Pone la clase en sus horas. Avisa si repite una clase o si ocupa horas con otra."""
+        dia, horas = clase["dia"], range(clase["inicio"], clase["fin"])
+        propias = (
+            set(range(anterior["inicio"], anterior["fin"]))
+            if anterior and anterior["dia"] == dia
+            else set()
+        )
+        ocupadas = {
+            h: self.celdas[(dia, h)] for h in horas if (dia, h) in self.celdas and h not in propias
+        }
+        titulo = TITULOS_DIAS[DIAS.index(dia)]
+        if ocupadas and all(c == clase["celda"] for c in ocupadas.values()) and not anterior:
+            informar(
+                self,
+                "Esa clase ya está en el horario",
+                f"{titulo} de {_hora_texto(min(ocupadas))} a {_hora_texto(max(ocupadas) + 1)} "
+                "ya tiene esa misma clase: no se duplicó.",
+            )
+            return False
+        if ocupadas:
+            detalle = "\n".join(
+                f"• {titulo} {_hora_texto(h)}–{_hora_texto(h + 1)}: "
+                + self.nombres["asignaturas"].get(c.asignatura_id, {}).get("nombre", "?")
+                for h, c in sorted(ocupadas.items())
+            )
+            if not confirmar(
+                self,
+                "Esas horas ya tienen otra clase en este horario.",
+                detalle + "\n\n¿Reemplazarlas por la nueva clase?",
+                "Reemplazar",
+            ):
+                return False
+        if anterior:
+            for h in range(anterior["inicio"], anterior["fin"]):
+                self.celdas.pop((anterior["dia"], h), None)
+        for h in horas:
+            self.celdas[(dia, h)] = clase["celda"]
+        self._marcar_cambio()
+        return True
+
+    def agregar_clase(self) -> None:
+        if not self._asegurar_borrador():
+            return
+        dialogo = DialogoClase(self._catalogos_periodo(), None, self)
+        while dialogo.exec():
+            if self._colocar(dialogo.clase()):
+                return
+
+    def editar_clase(self) -> None:
+        elegida = self._clase_elegida()
+        if elegida is None:
+            informar(self, "Elige una clase", "Selecciónala en la cuadrícula o en la lista.")
+            return
+        if not self._asegurar_borrador():
+            return
+        elegida = self._clase_elegida() or elegida  # el borrador nuevo copia las mismas clases
+        dialogo = DialogoClase(self._catalogos_periodo(), elegida, self)
+        while dialogo.exec():
+            if self._colocar(dialogo.clase(), anterior=elegida):
+                return
+
+    def eliminar_clase(self) -> None:
+        elegida = self._clase_elegida()
+        if elegida is None:
+            informar(self, "Elige una clase", "Selecciónala en la cuadrícula o en la lista.")
+            return
+        cuando = (
+            f"{TITULOS_DIAS[DIAS.index(elegida['dia'])]} {_hora_texto(elegida['inicio'])}–"
+            f"{_hora_texto(elegida['fin'])}"
+        )
+        if not confirmar(
+            self,
+            f"¿Eliminar {elegida['asignatura']} del {cuando}?",
+            "Se quita del borrador; las versiones anteriores y la asistencia ya registrada "
+            "no cambian.",
+            "Eliminar",
+        ):
+            return
+        if not self._asegurar_borrador():
+            return
+        for h in range(elegida["inicio"], elegida["fin"]):
+            self.celdas.pop((elegida["dia"], h), None)
+        self._marcar_cambio()
+
+    def nuevo_docente(self) -> None:
+        dialogo = DialogoFormulario(
+            "Nuevo docente",
+            [
+                Campo("nombre", "Nombre (apellidos y nombres)", obligatorio=True),
+                Campo("nomina", "Nómina"),
+            ],
+            padre=self,
+        )
+        while dialogo.exec():
+            datos = {k: v for k, v in dialogo.valores().items() if v}
+            try:
+                docente = self.api.post("/docentes", datos)
+            except ErrorApi as error:
+                mostrar_error(self, error, "El docente no se agregó")
+                continue
+            self.recargar()
+            indice = next(
+                (
+                    i
+                    for i in range(self.docente.count())
+                    if (self.docente.itemData(i) or {}).get("id") == docente["id"]
+                ),
+                -1,
+            )
+            if indice >= 0:
+                self.docente.setCurrentIndex(indice)
+                self.cargar_versiones()
+            return
+
+    def _version_de_otro_periodo(self) -> dict | None:
+        """La versión oficial más reciente del docente en otro periodo (semestre anterior)."""
+        periodo, docente = self._periodo(), self._docente()
+        try:
+            versiones = self.api.get("/horarios", docente_id=docente["id"])
+        except ErrorApi:
+            return None
+        otras = [
+            v
+            for v in versiones
+            if v["periodo"]["id"] != periodo["id"] and v["estado"] in ("vigente", "historico")
+        ]
+        otras.sort(key=lambda v: (v["periodo"]["id"], v["estado"] == "vigente", v["version"]))
+        return otras[-1] if otras else None
+
+    def _copiar_clases(self, origen: dict, destino_id: int) -> None:
+        """Copia materias, horas y aulas. Los grupos cambian cada semestre: queda la letra
+        pendiente de validar, para asignar el grupo del periodo nuevo."""
+        letras = {g["id"]: g.get("letra") for g in self.catalogos["grupos"]}
+        bloques = []
+        for b in self.api.get(f"/horarios/{origen['id']}")["bloques"]:
+            letra = letras.get(b["grupo"]["id"]) if b.get("grupo") else b.get("grupo_letra")
+            bloques.append(
+                {
+                    "dia": b["dia"],
+                    "hora_inicio": b["hora_inicio"],
+                    "hora_fin": b["hora_fin"],
+                    "asignatura_id": b["asignatura"]["id"],
+                    "grupo_id": None,
+                    "grupo_letra": letra,
+                    "aula_id": b["aula"]["id"] if b.get("aula") else None,
+                }
+            )
+        self.api.put(f"/horarios/{destino_id}/bloques", bloques)
+
     # --- acciones --------------------------------------------------------------------
 
     def nueva_version(self) -> None:
@@ -505,13 +893,28 @@ class VistaHorarios(QWidget):
             return
         vigente = next((v for v in self.versiones.filas if v["estado"] == "vigente"), None)
         datos = {"docente_id": docente["id"], "periodo_id": periodo["id"]}
+        copiar = None
         if vigente:
             datos["basado_en_id"] = vigente["id"]
+        elif (anterior := self._version_de_otro_periodo()) and confirmar(
+            self,
+            f"¿Copiar las clases de {anterior['periodo']['nombre']} como punto de partida?",
+            "Se copian materias, días, horas y aulas. Los grupos cambian cada semestre: "
+            "queda solo la letra, pendiente de asignar al grupo del periodo nuevo. El "
+            "horario del periodo anterior no se modifica.",
+            "Sí, copiar",
+        ):
+            copiar = anterior
         try:
             nuevo = self.api.post("/horarios", datos)
         except ErrorApi as error:
             mostrar_error(self, error)
             return
+        if copiar:
+            try:
+                self._copiar_clases(copiar, nuevo["id"])
+            except ErrorApi as error:
+                mostrar_error(self, error, "El borrador se creó vacío: no se copiaron las clases")
         self.cargar_versiones(seleccionar=nuevo["id"])
 
     def guardar(self) -> bool:

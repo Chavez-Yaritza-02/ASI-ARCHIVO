@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import SesionDB, UsuarioActual
 from app.core.config import obtener_configuracion
+from app.db.sqlite_local import VERSION_ESQUEMA
 from asi_shared.version import PROTOCOLO, VERSION
 
 router = APIRouter(prefix="/sistema", tags=["sistema"])
@@ -32,7 +33,7 @@ def estado(sesion: SesionDB, _: UsuarioActual, response: Response):
         revision = sesion.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
     except SQLAlchemyError as error:
         raise HTTPException(503, "El servicio de datos no está disponible") from error
-    if revision != ["e6a001"]:
+    if revision != [VERSION_ESQUEMA]:
         raise HTTPException(503, "El esquema requiere revisión del administrador")
     c = obtener_configuracion()
     return {

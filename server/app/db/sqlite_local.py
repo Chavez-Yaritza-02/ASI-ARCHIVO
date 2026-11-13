@@ -18,7 +18,13 @@ from app.local.modelos import METADATOS_LOCALES
 from app.models import Base
 
 # Última migración de PostgreSQL a la que equivale el esquema creado desde los modelos.
-VERSION_ESQUEMA = "e6a001"
+VERSION_ESQUEMA = "i7a001"
+
+# Actualizaciones locales permitidas: solo AGREGAN tablas nuevas y vacías (como la
+# migración de PostgreSQL equivalente). Nunca modifican ni mueven registros existentes.
+ACTUALIZACIONES_ADITIVAS = {
+    "e6a001": ("i7a001", ("importacion_incidencias", "incidencia_importada")),
+}
 
 # Mismas protecciones y mensajes que los triggers de PostgreSQL (migraciones fe6d6759717c
 # y e6a001). SQLite no tiene funciones en plpgsql: cada trigger aborta directamente.
@@ -148,20 +154,35 @@ def preparar_base_local(engine: Engine) -> bool:
     if not tablas:
         crear_esquema(engine)
         return True
-    faltan = set(Base.metadata.tables) - tablas
-    if faltan or "alembic_version" not in tablas:
+    if "alembic_version" not in tablas:
         raise BaseLocalIncompatible("La base local está incompleta; no se modificó")
     with motor_de_escritura(engine).begin() as conexion:
         version = conexion.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
-        if version != [VERSION_ESQUEMA]:
+        siguiente, nuevas = (
+            ACTUALIZACIONES_ADITIVAS.get(version[0], (None, ()))
+            if len(version) == 1
+            else (None, ())
+        )
+        if version != [VERSION_ESQUEMA] and siguiente != VERSION_ESQUEMA:
             raise BaseLocalIncompatible(
                 f"La base local es de otra versión ({', '.join(version) or 'sin versión'}); "
                 "no se modificó"
             )
+        esperadas = set(Base.metadata.tables) - (set(nuevas) if siguiente else set())
+        if esperadas - tablas or (siguiente and set(nuevas) & tablas):
+            raise BaseLocalIncompatible("La base local está incompleta; no se modificó")
         if set(TRIGGERS) - triggers_presentes(conexion):
             raise BaseLocalIncompatible("A la base local le faltan protecciones; no se modificó")
         if conexion.exec_driver_sql("PRAGMA quick_check").scalar() != "ok":
             raise BaseLocalIncompatible("La base local está dañada; usa un respaldo")
+        if siguiente:
+            # Misma transacción: si algo falla, la base queda exactamente como estaba.
+            for nombre in nuevas:
+                Base.metadata.tables[nombre].create(conexion)
+            conexion.execute(
+                text("UPDATE alembic_version SET version_num = :nueva WHERE version_num = :actual"),
+                {"nueva": siguiente, "actual": version[0]},
+            )
         # Tablas exclusivas de la aplicación local añadidas después (solo se agregan).
         METADATOS_LOCALES.create_all(conexion)
     return False

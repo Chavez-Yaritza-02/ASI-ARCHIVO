@@ -46,6 +46,7 @@ from asi_cliente.views.consultas import (
 from asi_cliente.views.documentos import VistaDocumentos
 from asi_cliente.views.gestion_horarios import VistaCambios, cambiar_periodo_activo
 from asi_cliente.views.horarios import VistaHorarios
+from asi_cliente.views.incidencias_excel import VistaIncidenciasExcel
 from asi_cliente.views.inicio import VistaInicio
 from asi_cliente.views.periodos import VistaPeriodos
 from asi_cliente.views.reportes import VistaReportes
@@ -57,6 +58,7 @@ SECCIONES = [
     ("Asistencia por hora", "asistencia.ver", 4),
     ("Bitácora del día", "asistencia.ver", 4),
     ("Calendario", "asistencia.ver", 4),
+    ("Importar incidencias", "asistencia.registrar", 7),
     ("Horarios", "horarios.ver", 2),
     ("Horarios por grupo", "horarios.ver", 5),
     ("Importar horarios", "horarios.editar", 3),
@@ -77,6 +79,7 @@ PANTALLAS = {
     "Asistencia por hora": VistaAsistenciaHora,
     "Bitácora del día": VistaBitacora,
     "Calendario": VistaCalendario,
+    "Importar incidencias": VistaIncidenciasExcel,
     "Horarios": VistaHorarios,
     "Horarios por grupo": VistaGrupos,
     "Importar horarios": VistaAsistenteImportacion,
@@ -103,6 +106,7 @@ GRUPOS = [
             ("Asistencia por hora", "Registro por hora"),
             ("Bitácora del día", "Bitácora del día"),
             ("Calendario", "Días inhábiles y eventos"),
+            ("Importar incidencias", "Importar incidencias (Excel)"),
         ],
     ),
     (

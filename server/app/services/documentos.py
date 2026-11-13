@@ -338,7 +338,7 @@ def _validar_vinculo(sesion, datos, a):
         raise ErrorNegocio("El documento corresponde a otro periodo", 409)
 
 
-def vincular(sesion, usuario, id_, version_id, asistencia_id, motivo):
+def vincular(sesion, usuario, id_, version_id, asistencia_id, motivo, confirmar_transaccion=True):
     d = obtener(sesion, id_, True)
     if not d.activo:
         raise ErrorNegocio("No se vinculan documentos archivados", 409)
@@ -380,7 +380,8 @@ def vincular(sesion, usuario, id_, version_id, asistencia_id, motivo):
             "motivo": motivo,
         },
     )
-    sesion.commit()
+    if confirmar_transaccion:
+        sesion.commit()
     return {"id": enlace.id, "asistencia_id": a.id, "version_id": v.id, "activo": True}
 
 

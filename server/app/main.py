@@ -18,6 +18,7 @@ from app.api import (
     documentos,
     horarios,
     importaciones,
+    incidencias_excel,
     local,
     periodos,
     sistema,
@@ -49,6 +50,7 @@ app.include_router(catalogos.aulas)
 app.include_router(periodos.router)
 app.include_router(horarios.router)
 app.include_router(importaciones.router)
+app.include_router(incidencias_excel.router)
 app.include_router(bitacora.bitacora)
 app.include_router(bitacora.asistencias)
 app.include_router(bitacora.incidencias)

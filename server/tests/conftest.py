@@ -56,7 +56,8 @@ TABLAS_DE_PRUEBA = (
     "usuario, usuario_rol, auditoria, docente, asignatura, grupo, aula, "
     "periodo, horario, bloque_horario, importacion, importacion_documento, "
     "importacion_pagina, importacion_celda, calendario_evento, asistencia, "
-    "incidencia, asistencia_hora, documento_asistencia, documento_version, documento"
+    "incidencia, asistencia_hora, documento_asistencia, documento_version, documento, "
+    "importacion_incidencias, incidencia_importada"
 )
 
 

@@ -19,6 +19,7 @@ from app.models.importacion import (
     Importacion,
     PaginaImportada,
 )
+from app.models.incidencias_excel import ImportacionIncidencias, IncidenciaImportada
 from app.models.seguridad import Permiso, Rol, Usuario
 
 __all__ = [
@@ -41,6 +42,8 @@ __all__ = [
     "Grupo",
     "Horario",
     "Importacion",
+    "ImportacionIncidencias",
+    "IncidenciaImportada",
     "Incidencia",
     "PaginaImportada",
     "Periodo",

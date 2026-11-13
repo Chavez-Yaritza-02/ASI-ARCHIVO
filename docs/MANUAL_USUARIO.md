@@ -61,7 +61,7 @@ pestañas en la parte de arriba:
 | Sección | Qué encuentras | Atajo |
 |---|---|---|
 | **Inicio** | Clases de hoy, pendientes, faltas, retardos y accesos rápidos | Ctrl+1 |
-| **Asistencias** | Registro por hora · Bitácora del día · Días inhábiles y eventos | Ctrl+2 |
+| **Asistencias** | Registro por hora · Bitácora del día · Días inhábiles y eventos · Importar incidencias (Excel) | Ctrl+2 |
 | **Horarios** | Por docente · Por grupo · Importar horarios · Registro de cambios | Ctrl+3 |
 | **Docentes** | Catálogo de docentes · Búsqueda general | Ctrl+4 |
 | **Reportes** | PDF y Excel de asistencia, bitácora y horarios por grupo | Ctrl+5 |
@@ -82,6 +82,30 @@ están en **Mostrar más filtros** / **Mostrar filtros avanzados**.
   horario; la **vigente** es la oficial. Los semestres anteriores se consultan eligiendo
   su periodo.
 - **Horarios › Por grupo**: horario semanal de un grupo.
+
+### Capturar o corregir un horario a mano
+
+En **Horarios › Por docente**, elige periodo y docente. Si el docente no existe, usa
+**Nuevo docente…**.
+
+- **Agregar clase…**: día, hora de inicio, hora de fin, materia o actividad, grupo y
+  aula. Agrega tantas clases como necesites, también varias el mismo día.
+- **Editar clase…** / **Eliminar clase**: elige la clase en la cuadrícula (pestaña
+  **Semana**) o en la pestaña **Lista de clases**, que muestra el horario completo.
+- Si esa clase ya está, se avisa y no se duplica. Si las horas ya tienen otra clase, se
+  pregunta antes de reemplazarla.
+- Al **Guardar cambios** se avisa si el aula o el grupo ya están ocupados a esa hora por
+  otro docente.
+- Si estás viendo la versión vigente, al cambiar algo se crea una **nueva versión
+  (borrador)**. La vigente no cambia hasta que confirmes la nueva con **Confirmar como
+  vigente**.
+- **Semestre nuevo**: elige el periodo nuevo y pulsa **Nueva versión**. Puedes copiar
+  las clases del semestre anterior. Los grupos quedan pendientes (solo la letra) para
+  asignar los del periodo nuevo.
+
+La asistencia ya registrada conserva el horario que regía ese día. Los horarios
+importados por PDF y los capturados a mano son las mismas versiones: no se crean horarios
+duplicados.
 - **Horarios › Registro de cambios**: quién creó, editó o confirmó cada horario y cuándo.
 - **Administración › Ubicación programada**: dónde *debería* estar un docente a cierta
   hora según su horario (no confirma que esté ahí).
@@ -130,6 +154,33 @@ documentos de cada hora y los reportes del día o de un rango de fechas.
 
 **Asistencias › Bitácora del día** muestra el registro anterior por turno (matutino /
 vespertino) y sus incidencias; se conserva para consulta.
+
+### Importar faltas y salidas anticipadas desde Excel
+
+En **Asistencias › Importar incidencias (Excel)**:
+
+1. **Elegir archivo Excel…** (.xlsx). Se reconocen las columnas **FECHA**, **DOCENTE**
+   (o PROFESOR / NOMBRE), **INCIDENCIA** (o TIPO), **HORA** y **OBSERVACIONES** (o
+   MOTIVO). Leer el archivo **no registra nada**.
+2. La tabla muestra cada fila con lo que falta revisar: docente no encontrado, fecha
+   incorrecta, posible duplicado, horas ya registradas…
+3. **Revisar fila…** (o doble clic):
+   - Corrige el docente, la fecha y el tipo: **Falta** o **Salida anticipada**, con su
+     hora de salida.
+   - Pulsa **Aplicar y ver sus horas**: aparece el horario del docente ese día.
+   - **Marca solo las horas que no se cumplieron.** Nada se marca solo. En una salida
+     anticipada, **Marcar las horas posteriores a la salida** es una ayuda opcional.
+   - Opcional: **Justificada** (con motivo), observaciones y justificante del archivo
+     digital.
+   - **Guardar revisión.**
+4. Marca en la columna **Importar** las filas confirmadas y pulsa **Importar filas
+   marcadas**. Se importan todas o ninguna. Las que no marques quedan **pendientes** para
+   después. **Descartar fila…** la aparta (con motivo) sin borrarla.
+
+Las horas importadas aparecen en **Registro por hora** y en los reportes, con la
+observación «Falta reportada en Excel…» o «Salida anticipada a las HH:MM…». Una hora que
+ya tenía registro **no se sobrescribe**: corrígela en Registro por hora. Si cargas el
+mismo archivo otra vez, se abre la revisión existente.
 
 ## 6. Reportes en PDF y Excel
 

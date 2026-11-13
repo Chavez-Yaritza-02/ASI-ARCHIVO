@@ -42,6 +42,9 @@ def test_registrar_cerrar_y_volver_a_abrir_sin_red_ni_servidor(tmp_path):
     assert primera["registro"] == "asistio"
     assert primera["estados"] == ["asistio", "falto"]
     assert primera["duplicado"] == 409
+    assert primera["incidencia_importada"] == 1
+    assert primera["incidencia"] == ["pendiente", "falto"]
+    assert primera["excel_repetido"] == [True, 1]
     assert primera["identidad"] == "local" and primera["sistema"] == "ok"
 
     # Otro proceso: como cerrar la aplicación y volver a abrirla.
@@ -50,6 +53,8 @@ def test_registrar_cerrar_y_volver_a_abrir_sin_red_ni_servidor(tmp_path):
     assert segunda["estado_inicial"] == {"configurada": True, "usuario": "jefatura"}
     assert segunda["estados"] == ["asistio", "falto"]
     assert segunda["duplicado"] == 409
+    assert segunda["incidencia"] == ["pendiente", "falto"]
+    assert segunda["excel_repetido"] == [True, 1]
 
     # Lo guardado está en el archivo SQLite de la carpeta de datos.
     base = carpeta / "datos" / "asi-archivo.db"
@@ -57,15 +62,18 @@ def test_registrar_cerrar_y_volver_a_abrir_sin_red_ni_servidor(tmp_path):
     with sqlite3.connect(base) as c:
         assert c.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         assert c.execute(
-            "SELECT estado FROM asistencia_hora ORDER BY programado_inicio"
+            "SELECT fecha, estado FROM asistencia_hora ORDER BY fecha, programado_inicio"
         ).fetchall() == [
-            ("asistio",),
-            ("falto",),
+            ("2026-11-02", "asistio"),
+            ("2026-11-02", "falto"),
+            ("2026-11-09", "falto"),  # importada del Excel, solo la hora elegida
         ]
         assert c.execute("SELECT count(*) FROM usuario").fetchone() == (1,)
         acciones = {a for (a,) in c.execute("SELECT accion FROM auditoria")}
         assert {"crear", "login"} <= acciones
         assert c.execute("SELECT count(*) FROM cuenta_recuperacion").fetchone() == (1,)
+        assert c.execute("SELECT estado FROM incidencia_importada").fetchall() == [("importada",)]
+        assert c.execute("SELECT count(*) FROM asistencia_hora").fetchone() == (3,)
     assert (
         not (carpeta / "datos" / "asi-archivo.db-wal").exists()
         or (carpeta / "datos" / "asi-archivo.db-wal").stat().st_size == 0
